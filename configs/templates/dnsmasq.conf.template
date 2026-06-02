@@ -1,0 +1,9 @@
+interface={{WIFI_INTERFACE}}
+bind-interfaces
+listen-address={{AP_IP}}
+
+dhcp-range={{DHCP_START}},{{DHCP_END}},12h
+dhcp-option=3,{{AP_IP}}
+dhcp-option=6,{{AP_IP}}
+
+address=/#/{{AP_IP}}

@@ -1,0 +1,37 @@
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+
+    access_log /var/log/nginx/edge-gateway.access.log;
+    error_log /var/log/nginx/edge-gateway.error.log;
+
+    location / {
+        proxy_pass http://127.0.0.1:{{FLASK_PORT}};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:{{FLASK_PORT}}/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    location = /generate_204 {
+        return 200 " ";
+        add_header Content-Type text/plain;
+    }
+
+    location = /hotspot-detect.html {
+        return 200 " ";
+        add_header Content-Type text/html;
+    }
+
+    location = /success.txt {
+        return 200 "success";
+        add_header Content-Type text/plain;
+    }
+}

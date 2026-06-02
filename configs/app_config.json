@@ -1,5 +1,6 @@
 {
   "device_name": "edge-gateway-framework",
+  "platform_mode": "mock",
   "wifi": {
     "mode": "ap",
     "ssid": "EdgeGateway",
