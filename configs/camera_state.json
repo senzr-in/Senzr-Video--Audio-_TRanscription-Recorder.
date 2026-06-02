@@ -1,8 +1,8 @@
 {
   "camera_online": true,
   "inference_running": true,
-  "detection_mode": "object",
-  "last_frame_id": "frame-69f68270",
+  "detection_mode": "face",
+  "last_frame_id": "frame-2a988516",
   "last_inference": [
     {
       "label": "person",
@@ -25,5 +25,5 @@
       ]
     }
   ],
-  "last_inference_time": "2026-06-02T10:14:23.088818"
+  "last_inference_time": "2026-06-02T10:43:17.579216"
 }

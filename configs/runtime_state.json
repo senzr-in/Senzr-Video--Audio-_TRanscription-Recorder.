@@ -1,5 +1,5 @@
 {
-  "status": "uplink_updated",
-  "last_updated": "2026-06-02T10:14:23.100237",
-  "active_mode": "object"
+  "status": "ap_running",
+  "last_updated": "2026-06-02T10:43:25.256552",
+  "active_mode": "face"
 }

@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Edge Gateway Framework</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">Edge AI Control Panel</p>
+      <h1>Edge Gateway Framework</h1>
+      <p class="subtitle">Local device control for Wi‑Fi, inference, and runtime monitoring.</p>
+    </div>
+    <div class="status-pill" id="runtimeStatus">Loading...</div>
+  </header>
+
+  <main class="dashboard">
+    <section class="card hero-card">
+      <h2>System Overview</h2>
+      <div class="stats-grid">
+        <div class="stat-box">
+          <span class="label">Active Mode</span>
+          <strong id="activeMode">-</strong>
+        </div>
+        <div class="stat-box">
+          <span class="label">AP Running</span>
+          <strong id="apRunning">-</strong>
+        </div>
+        <div class="stat-box">
+          <span class="label">Uplink</span>
+          <strong id="uplinkState">-</strong>
+        </div>
+        <div class="stat-box">
+          <span class="label">Clients</span>
+          <strong id="clientCount">-</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Wi‑Fi Control</h2>
+      <div class="button-row">
+        <button id="startApBtn">Start AP</button>
+        <button class="secondary" id="stopApBtn">Stop AP</button>
+        <button class="ghost" id="uplinkBtn">Toggle Uplink</button>
+      </div>
+
+      <div class="info-grid">
+        <div><span class="label">SSID</span><p id="ssidValue">-</p></div>
+        <div><span class="label">Channel</span><p id="channelValue">-</p></div>
+        <div><span class="label">IP Address</span><p id="ipValue">-</p></div>
+      </div>
+
+      <div class="client-list-wrap">
+        <span class="label">Connected Clients</span>
+        <ul id="clientList" class="client-list"></ul>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Inference Control</h2>
+      <div class="button-row">
+        <button id="faceModeBtn">Face Mode</button>
+        <button class="secondary" id="objectModeBtn">Object Mode</button>
+        <button class="ghost" id="runInferenceBtn">Run Inference</button>
+      </div>
+
+      <div class="info-grid">
+        <div><span class="label">Detection Mode</span><p id="detectionMode">-</p></div>
+        <div><span class="label">Inference Running</span><p id="inferenceRunning">-</p></div>
+        <div><span class="label">Last Frame</span><p id="lastFrame">-</p></div>
+      </div>
+
+      <div class="results-box">
+        <span class="label">Last Detection Results</span>
+        <pre id="inferenceResults">No results yet.</pre>
+      </div>
+    </section>
+  </main>
+
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
