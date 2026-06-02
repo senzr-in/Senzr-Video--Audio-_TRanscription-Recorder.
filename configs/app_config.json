@@ -1,0 +1,14 @@
+{
+  "device_name": "edge-gateway-framework",
+  "wifi": {
+    "mode": "ap",
+    "ssid": "EdgeGateway",
+    "password": "ChangeMe123",
+    "channel": 6
+  },
+  "inference": {
+    "mode": "object",
+    "run_local_only": true,
+    "auto_start": false
+  }
+}
