@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Edge Gateway Config</title>
+  </head>
+    <body>
+    <h1>Edge Gateway Config</h1>
+
+    <form id="config-form">
+        <label>
+        Detection mode:
+        <select id="mode">
+            <option value="face">Face</option>
+            <option value="object">Object</option>
+        </select>
+        </label>
+        <br />
+
+        <label>
+        Wi-Fi SSID:
+        <input type="text" id="wifi-ssid" />
+        </label>
+        <br />
+
+        <label>
+        Wi-Fi Password:
+        <input type="password" id="wifi-password" />
+        </label>
+        <br />
+
+        <button type="submit">Save</button>
+    </form>
+
+    <p id="status"></p>
+
+    <script>
+        const modeEl = document.getElementById("mode");
+        const ssidEl = document.getElementById("wifi-ssid");
+        const passEl = document.getElementById("wifi-password");
+        const statusEl = document.getElementById("status");
+        const formEl = document.getElementById("config-form");
+
+        async function loadConfig() {
+        try {
+            const res = await fetch("/config");
+            const data = await res.json();
+            modeEl.value = data.mode;
+            ssidEl.value = data.wifi_ssid || "";
+            passEl.value = data.wifi_password || "";
+        } catch (err) {
+            statusEl.textContent = "Failed to load config";
+        }
+        }
+
+        formEl.addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        statusEl.textContent = "Saving...";
+        const payload = {
+            mode: modeEl.value,
+            wifi_ssid: ssidEl.value,
+            wifi_password: passEl.value,
+        };
+        try {
+            const res = await fetch("/config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+            });
+            if (!res.ok) {
+            throw new Error("Failed");
+            }
+            statusEl.textContent = "Saved";
+        } catch (err) {
+            statusEl.textContent = "Failed to save config";
+        }
+        });
+
+        loadConfig();
+    </script>
+    </body>
+</html>
