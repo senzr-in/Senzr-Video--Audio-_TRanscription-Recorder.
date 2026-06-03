@@ -1,9 +1,0 @@
-{
-  "ap_running": true,
-  "client_mode_enabled": false,
-  "ssid": "EdgeGateway",
-  "channel": 6,
-  "ip_address": "192.168.4.1",
-  "uplink_connected": true,
-  "connected_clients": []
-}
