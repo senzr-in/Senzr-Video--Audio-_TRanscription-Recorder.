@@ -1,5 +1,5 @@
 {
   "mode": "face",
-  "wifi_ssid": "",
-  "wifi_password": ""
+  "wifi_ssid": "TestSSID",
+  "wifi_password": "TestPass123"
 }

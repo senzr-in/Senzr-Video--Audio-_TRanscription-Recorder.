@@ -43,7 +43,7 @@
 
         async function loadConfig() {
         try {
-            const res = await fetch("/config");
+            const res = await fetch("/api/config");
             const data = await res.json();
             modeEl.value = data.mode;
             ssidEl.value = data.wifi_ssid || "";
@@ -62,7 +62,7 @@
             wifi_password: passEl.value,
         };
         try {
-            const res = await fetch("/config", {
+            const res = await fetch("/api/config", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),

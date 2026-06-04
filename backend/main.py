@@ -33,7 +33,7 @@ def load_config() -> DeviceConfig:
 
 def save_config(config: DeviceConfig) -> None:
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG_PATH.write_text(config.json(indent=2))
+    CONFIG_PATH.write_text(json.dumps(config.model_dump(), indent=2))
 
 
 @app.get("/health")
