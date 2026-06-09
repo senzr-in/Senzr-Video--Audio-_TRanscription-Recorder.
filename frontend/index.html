@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Edge Gateway Framework</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="container">
+    <header class="hero">
+      <h1>Edge Gateway Framework</h1>
+      <p class="subtitle">Local Edge AI device manager for network and detection configuration.</p>
+    </header>
+
+    <section class="card">
+      <h2>Device Status</h2>
+      <div class="status-grid">
+        <div>
+          <span class="label">Status</span>
+          <p id="status">Loading...</p>
+        </div>
+        <div>
+          <span class="label">Hostname</span>
+          <p id="hostname">Loading...</p>
+        </div>
+        <div>
+          <span class="label">IP Address</span>
+          <p id="ip_address">Loading...</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Configuration</h2>
+      <form id="configForm">
+        <label for="device_name">Device Name</label>
+        <input type="text" id="device_name" name="device_name">
+
+        <label for="mode">Detection Mode</label>
+        <select id="mode" name="mode">
+          <option value="face">Face Detection</option>
+          <option value="object">Object Detection</option>
+        </select>
+
+        <label for="wifi_ssid">Wi-Fi SSID</label>
+        <input type="text" id="wifi_ssid" name="wifi_ssid">
+
+        <label for="wifi_password">Wi-Fi Password</label>
+        <input type="text" id="wifi_password" name="wifi_password">
+
+        <label class="checkbox-row">
+          <input type="checkbox" id="provisioning_enabled" name="provisioning_enabled">
+          Provisioning Enabled
+        </label>
+
+        <label class="checkbox-row">
+          <input type="checkbox" id="camera_connected" name="camera_connected" disabled>
+          Camera Connected
+        </label>
+
+        <button type="submit">Save Configuration</button>
+      </form>
+
+      <p id="message" class="message"></p>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
