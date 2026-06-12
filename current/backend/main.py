@@ -33,7 +33,7 @@ def startup_event():
     log.info("Edge Gateway started. Backend ready.")
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 def serve_index():
     try:
         if not INDEX_FILE.exists():

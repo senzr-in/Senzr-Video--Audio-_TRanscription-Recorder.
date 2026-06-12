@@ -16,3 +16,9 @@ logs/*.log
 .DS_Store
 Thumbs.db
 updater_config.env
+
+0~updater_config.env
+backup/
+current/.version
+current/logs/
+venv/
