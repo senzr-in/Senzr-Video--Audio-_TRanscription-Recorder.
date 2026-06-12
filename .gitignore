@@ -15,3 +15,4 @@ logs/*.log
 # OS junk
 .DS_Store
 Thumbs.db
+updater_config.env
