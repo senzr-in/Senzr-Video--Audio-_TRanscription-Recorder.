@@ -1,0 +1,8 @@
+{
+  "devicename": "edge-gateway-framework",
+  "mode": "object",
+  "wifissid": "EdgeGateway",
+  "wifipassword": "changeme123",
+  "provisioningenabled": true,
+  "cameraconnected": false
+}
