@@ -7,22 +7,20 @@ import logging
 import threading
 import json
 
-from backend.configmanager import readconfig, writeconfig
-from backend.database import initdb, logconfigchange
-from backend.models import ConfigModel
-from backend.loggerutils import gettimestamp, diffconfigs, writefilelog, getmacfromip
+from .configmanager import readconfig, writeconfig
+from .database import initdb, logconfigchange
+from .models import ConfigModel
+from .loggerutils import gettimestamp, diffconfigs, writefilelog, getmacfromip
 
-# Optional: import S3 uploader if AWS is configured
 try:
-    from backend.s3uploader import uploadrecording as s3_upload_fn
+    from .s3uploader import uploadrecording as s3_upload_fn
 except Exception:
     s3_upload_fn = None
 
-# Optional: import PersonDetector (fails gracefully on non-Pi hardware)
 try:
-    from backend.camera_detector import PersonDetector
+    from .camera_detector import PersonDetector
     _DETECTOR_AVAILABLE = True
-except Exception:
+except Exception as e:
     PersonDetector = None
     _DETECTOR_AVAILABLE = False
 
@@ -103,7 +101,7 @@ class CameraManager:
 
             try:
                 self._stop_event = threading.Event()
-                self._detector = PersonDetector(s3uploader=s3_upload_fn)
+                self._detector = PersonDetector(s3_uploader=s3_upload_fn)
                 self._thread = threading.Thread(
                     target=self._detector.run,
                     args=(self._stop_event,),
