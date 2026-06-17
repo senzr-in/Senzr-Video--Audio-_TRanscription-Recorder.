@@ -1,105 +1,69 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Edge Gateway — Camera Control</title>
+  <title>Edge Gateway Framework</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <main class="container">
-
-    <!-- ── Header ─────────────────────────────────────────── -->
     <header class="hero">
-      <div class="hero-inner">
-        <svg class="logo" width="36" height="36" viewBox="0 0 36 36" fill="none"
-             aria-label="Edge Gateway logo" xmlns="http://www.w3.org/2000/svg">
-          <rect x="2" y="2" width="32" height="32" rx="8" stroke="currentColor" stroke-width="2"/>
-          <circle cx="18" cy="18" r="6" stroke="currentColor" stroke-width="2"/>
-          <path d="M18 4 v4 M18 28 v4 M4 18 h4 M28 18 h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-        </svg>
-        <div>
-          <h1>Edge Gateway <span class="version-badge">v2.0.0</span></h1>
-          <p class="subtitle">Camera Control Dashboard</p>
-        </div>
-      </div>
+      <h1>Edge Gateway Framework  v1.0.1</h1>
+      <p class="subtitle">Local Edge AI device manager for network and detection configuration.</p>
     </header>
 
-    <!-- ── Device Status Card ─────────────────────────────── -->
-    <section class="card" id="deviceStatusCard">
-      <h2>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <rect x="2" y="3" width="20" height="14" rx="2"/>
-          <path d="M8 21h8M12 17v4"/>
-        </svg>
-        Device Status
-      </h2>
+    <section class="card">
+      <h2>Device Status</h2>
       <div class="status-grid">
-        <div class="status-item">
+        <div>
           <span class="label">Status</span>
-          <p id="status" class="value loading-shimmer">Loading…</p>
+          <p id="status">Loading...</p>
         </div>
-        <div class="status-item">
+        <div>
           <span class="label">Hostname</span>
-          <p id="hostname" class="value loading-shimmer">Loading…</p>
+          <p id="hostname">Loading...</p>
         </div>
-        <div class="status-item">
+        <div>
           <span class="label">IP Address</span>
-          <p id="ip_address" class="value loading-shimmer">Loading…</p>
+          <p id="ip_address">Loading...</p>
         </div>
       </div>
     </section>
 
-    <!-- ── Detection Settings Card ────────────────────────── -->
-    <section class="card" id="detectionCard">
-      <h2>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="3"/>
-          <path d="M22 12h-2M4 12H2M12 4V2M12 22v-2"/>
-          <path d="M19.07 4.93l-1.41 1.41M6.34 17.66l-1.41 1.41M19.07 19.07l-1.41-1.41M6.34 6.34L4.93 4.93"/>
-        </svg>
-        Detection Settings
-      </h2>
+    <section class="card">
+      <h2>Configuration</h2>
+      <form id="configForm">
+        <label for="device_name">Device Name</label>
+        <input type="text" id="device_name" name="device_name">
 
-      <!-- Camera Status row -->
-      <div class="setting-row">
-        <div class="setting-info">
-          <span class="label">Camera Status</span>
-          <p id="cameraStatusText" class="value status-off">OFF</p>
-        </div>
-        <div class="camera-controls">
-          <button id="btnCameraOn"  class="btn btn-on"  onclick="cameraOn()">Turn ON</button>
-          <button id="btnCameraOff" class="btn btn-off" onclick="cameraOff()">Turn OFF</button>
-        </div>
-      </div>
+        <label for="mode">Detection Mode</label>
+        <select id="mode" name="mode">
+          <option value="face">Face Detection</option>
+          <option value="object">Object Detection</option>
+        </select>
 
-      <div class="divider"></div>
+        <label for="wifi_ssid">Wi-Fi SSID</label>
+        <input type="text" id="wifi_ssid" name="wifi_ssid">
 
-      <!-- Recording Status row -->
-      <div class="setting-row">
-        <div class="setting-info">
-          <span class="label">Recording Status</span>
-          <p id="recordingStatus" class="value status-idle">Idle</p>
-        </div>
-        <div class="recording-indicator" id="recordingDot" aria-hidden="true"></div>
-      </div>
+        <label for="wifi_password">Wi-Fi Password</label>
+        <input type="text" id="wifi_password" name="wifi_password">
 
-      <div class="divider"></div>
+        <label class="checkbox-row">
+          <input type="checkbox" id="provisioning_enabled" name="provisioning_enabled">
+          Provisioning Enabled
+        </label>
 
-      <!-- Recorded File row -->
-      <div class="setting-row">
-        <div class="setting-info full-width">
-          <span class="label">Recorded Video File</span>
-          <p id="recordedFile" class="value file-value">No recordings yet</p>
-        </div>
-      </div>
+        <label class="checkbox-row">
+          <input type="checkbox" id="camera_connected" name="camera_connected" disabled>
+          Camera Connected
+        </label>
 
-      <!-- Feedback message -->
-      <p id="cameraMessage" class="message" role="status" aria-live="polite"></p>
+        <button type="submit">Save Configuration</button>
+      </form>
+
+      <p id="message" class="message"></p>
     </section>
-
   </main>
 
   <script src="/static/app.js"></script>
