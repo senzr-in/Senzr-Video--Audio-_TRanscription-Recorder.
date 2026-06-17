@@ -7,18 +7,20 @@ import logging
 import threading
 import json
 
-from .configmanager import readconfig, writeconfig
-from .database import initdb, logconfigchange
-from .models import ConfigModel
-from .loggerutils import gettimestamp, diffconfigs, writefilelog, getmacfromip
+from backend.configmanager import readconfig, writeconfig
+from backend.database import initdb, logconfigchange
+from backend.models import ConfigModel
+from backend.loggerutils import gettimestamp, diffconfigs, writefilelog, getmacfromip
 
+# Optional: import S3 uploader if AWS is configured
 try:
-    from .s3uploader import uploadrecording as s3_upload_fn
+    from backend.s3uploader import uploadrecording as s3_upload_fn
 except Exception:
     s3_upload_fn = None
 
+# Optional: import PersonDetector (fails gracefully on non-Pi hardware)
 try:
-    from .cameradetector import PersonDetector
+    from backend.camera_detector import PersonDetector
     _DETECTOR_AVAILABLE = True
 except Exception:
     PersonDetector = None
