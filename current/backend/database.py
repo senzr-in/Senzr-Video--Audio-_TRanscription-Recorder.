@@ -1,56 +1,43 @@
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path("database/edge_gateway.db")
+DB_PATH = Path(__file__).parent / "database" / "edgegateway.db"
 
-
-def init_db():
+def initdb():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS system_info (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            key TEXT UNIQUE NOT NULL,
-            value TEXT NOT NULL
-        )
+    CREATE TABLE IF NOT EXISTS systeminfo (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        key TEXT UNIQUE NOT NULL,
+        value TEXT NOT NULL
+    )
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS config_changes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT NOT NULL,
-            client_ip TEXT,
-            client_mac TEXT,
-            user_agent TEXT,
-            changed_fields TEXT NOT NULL,
-            old_config TEXT NOT NULL,
-            new_config TEXT NOT NULL
-        )
+    CREATE TABLE IF NOT EXISTS configchanges (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp TEXT NOT NULL,
+        clientip TEXT,
+        clientmac TEXT,
+        useragent TEXT,
+        changedfields TEXT NOT NULL,
+        oldconfig TEXT NOT NULL,
+        newconfig TEXT NOT NULL
+    )
     """)
 
     conn.commit()
     conn.close()
 
-
-def log_config_change(timestamp, client_ip, client_mac, user_agent, changed_fields, old_config, new_config):
+def logconfigchange(timestamp, clientip, clientmac, useragent, changedfields, oldconfig, newconfig):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-
     cursor.execute("""
-        INSERT INTO config_changes (
-            timestamp, client_ip, client_mac, user_agent,
-            changed_fields, old_config, new_config
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (
-        timestamp,
-        client_ip,
-        client_mac,
-        user_agent,
-        changed_fields,
-        old_config,
-        new_config
-    ))
-
+    INSERT INTO configchanges
+    (timestamp, clientip, clientmac, useragent, changedfields, oldconfig, newconfig)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (timestamp, clientip, clientmac, useragent, changedfields, oldconfig, newconfig))
     conn.commit()
     conn.close()

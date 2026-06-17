@@ -22,3 +22,17 @@ backup/
 current/.version
 current/logs/
 venv/
+
+# Local runtime artifacts
+venv-npu/
+recordings/
+*.bak
+__pycache__/
+*.pyc
+
+# Local runtime artifacts
+venv-npu/
+recordings/
+*.bak
+__pycache__/
+*.pyc

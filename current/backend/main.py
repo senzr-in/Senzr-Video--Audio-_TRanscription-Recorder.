@@ -20,7 +20,7 @@ except Exception:
 try:
     from .camera_detector import PersonDetector
     _DETECTOR_AVAILABLE = True
-except Exception as e:
+except Exception:
     PersonDetector = None
     _DETECTOR_AVAILABLE = False
 
@@ -40,17 +40,12 @@ if FRONTEND_DIR.exists():
 
 
 class CameraManager:
-    """
-    Manages the PersonDetector thread lifecycle.
-    """
-
     def __init__(self):
         self._lock = threading.Lock()
         self._detector = None
         self._thread = None
         self._stop_event = None
         self._camera_enabled = False
-        self._last_recorded_file = None
 
     @property
     def camera_enabled(self) -> bool:
@@ -67,24 +62,21 @@ class CameraManager:
         with self._lock:
             if self._detector is None:
                 return False
-            return bool(getattr(self._detector, "recording", False))
+            return self._detector.is_recording
 
     @property
     def current_recording_file(self):
         with self._lock:
             if self._detector is None:
                 return None
-            outpath = getattr(self._detector, "outpath", None)
-            return outpath.name if outpath else None
+            return self._detector.current_recording_file
 
     @property
     def last_recorded_file(self):
         with self._lock:
-            if self._detector is not None:
-                outpath = getattr(self._detector, "outpath", None)
-                if outpath:
-                    return outpath.name
-            return self._last_recorded_file
+            if self._detector is None:
+                return None
+            return self._detector.last_recorded_file
 
     def turn_on(self) -> dict:
         with self._lock:
@@ -126,27 +118,16 @@ class CameraManager:
                 return {"ok": True, "message": "Camera already OFF"}
 
             self._camera_enabled = False
-
-            detector_ref = self._detector
-            if detector_ref is not None:
-                outpath = getattr(detector_ref, "outpath", None)
-                if outpath:
-                    self._last_recorded_file = outpath.name
-
-            if self._stop_event is not None:
-                self._stop_event.set()
-
+            stop_event = self._stop_event
             thread_ref = self._thread
+
+            if stop_event is not None:
+                stop_event.set()
 
         if thread_ref is not None:
             thread_ref.join(timeout=10)
 
         with self._lock:
-            if self._detector is not None:
-                outpath = getattr(self._detector, "outpath", None)
-                if outpath:
-                    self._last_recorded_file = outpath.name
-
             self._thread = None
             self._stop_event = None
             self._detector = None

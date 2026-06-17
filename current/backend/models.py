@@ -1,10 +1,9 @@
 from pydantic import BaseModel
 
-
 class ConfigModel(BaseModel):
-    device_name: str
+    devicename: str
     mode: str
-    wifi_ssid: str
-    wifi_password: str
-    provisioning_enabled: bool
-    camera_connected: bool
+    wifissid: str
+    wifipassword: str
+    provisioningenabled: bool
+    cameraconnected: bool
