@@ -1,45 +1,38 @@
+import threading
 import time
+from pathlib import Path
+
 import cv2
 
-from .queues import video_frame_queue, stop_event
-from .models import VideoFrame, now_ts
-
-CAMERA_PATH = "/dev/video0"
+from .config import CAMERA_INDEX, FRAME_W, FRAME_H, FRAME_RATE
 
 
-def open_camera_with_retry(max_tries: int = 10, delay: float = 1.0):
-    for attempt in range(1, max_tries + 1):
-        cap = cv2.VideoCapture(CAMERA_PATH, cv2.CAP_V4L2)
-        if cap.isOpened():
-            print(f"[VIDEO] Opened camera at {CAMERA_PATH} on attempt {attempt}")
-            return cap
-        print(f"[VIDEO] Attempt {attempt}/{max_tries} failed to open {CAMERA_PATH}, retrying in {delay}s...")
-        cap.release()
-        time.sleep(delay)
-    print(f"[VIDEO] Giving up after {max_tries} attempts to open {CAMERA_PATH}")
-    return None
+class VideoCaptureWorker:
+    def __init__(self, out_path: Path, stop_event: threading.Event):
+        self.out_path = Path(out_path)
+        self.stop_event = stop_event
+        self.cap = None
+        self.writer = None
 
+    def run(self):
+        self.cap = cv2.VideoCapture(CAMERA_INDEX)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_W)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_H)
 
-def video_capture_loop():
-    cap = open_camera_with_retry()
-    if cap is None:
-        return
+        if not self.cap.isOpened():
+            raise RuntimeError(f"Cannot open camera index {CAMERA_INDEX}")
 
-    print(f"[VIDEO] Capture loop started on {CAMERA_PATH}")
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        self.writer = cv2.VideoWriter(str(self.out_path), fourcc, FRAME_RATE, (FRAME_W, FRAME_H))
 
-    try:
-        while not stop_event.is_set():
-            ret, frame = cap.read()
+        while not self.stop_event.is_set():
+            ret, frame = self.cap.read()
             if not ret:
                 time.sleep(0.05)
                 continue
+            self.writer.write(frame)
 
-            ts = now_ts()
-            vf = VideoFrame(timestamp=ts, frame=frame)
-            try:
-                video_frame_queue.put(vf, timeout=0.1)
-            except Exception:
-                pass
-    finally:
-        cap.release()
-        print("[VIDEO] Capture loop stopped, camera released")
+        if self.writer is not None:
+            self.writer.release()
+        if self.cap is not None:
+            self.cap.release()

@@ -1,65 +1,22 @@
-# current/backend/session_pipeline/models.py
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Literal, Optional
-import numpy as np
-import time
+from typing import Optional
 from datetime import datetime
-
-
-@dataclass
-class VideoFrame:
-    timestamp: float
-    frame: np.ndarray
-
-
-@dataclass
-class AudioChunk:
-    timestamp: float
-    data: bytes
-
-
-RecordingEventType = Literal["START_RECORDING", "STOP_RECORDING"]
-
-
-@dataclass
-class RecordingEvent:
-    type: RecordingEventType
-    timestamp: float
-
-
-@dataclass
-class TranscriptionJob:
-    session_id: str
-    audio_path: Path
-
-
-@dataclass
-class UploadJob:
-    local_path: Path
-    s3_key: str
 
 
 @dataclass
 class SessionMeta:
     session_id: str
-    start_time: datetime
-    end_time: Optional[datetime] = None
-    video_path: Optional[Path] = None
-    audio_path: Optional[Path] = None
-    transcript_path: Optional[Path] = None
+    session_dir: str
+    started_at: str
+    ended_at: Optional[str] = None
+    video_file: str = "video.mp4"
+    audio_file: str = "audio.wav"
+    session_av_file: str = "session_av.mp4"
+    transcript_file: str = "transcript.txt"
+    status: str = "recording"
+    transcript_status: str = "pending"
+    upload_status: str = "pending"
 
-    @property
-    def duration_seconds(self) -> Optional[int]:
-        if not self.end_time:
-            return None
-        return int((self.end_time - self.start_time).total_seconds())
-
-
-def new_session_id() -> str:
-    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    return f"session_{ts}"
-
-
-def now_ts() -> float:
-    return time.time()
+    def to_dict(self):
+        return asdict(self)

@@ -1,46 +1,46 @@
-# current/backend/session_pipeline/run_session_pipeline.py
 import threading
-import signal
 import time
 
-from .queues import stop_event
-from .video_capture import video_capture_loop
-from .audio_capture import audio_capture_loop
-from .person_detection import person_detection_loop
-from .recorder_manager import recorder_manager_loop
-from .transcriber import transcriber_loop
-from .uploader import uploader_loop
+from current.backend.camera_detector import PersonDetector
+
+from .config import SESSION_BASE_DIR
+from .recorder_manager import RecorderManager
 
 
 def main():
-    print("[PIPELINE] Starting session pipeline")
+    SESSION_BASE_DIR.mkdir(parents=True, exist_ok=True)
 
-    threads = [
-        threading.Thread(target=video_capture_loop, name="video-capture", daemon=True),
-        threading.Thread(target=audio_capture_loop, name="audio-capture", daemon=True),
-        threading.Thread(target=person_detection_loop, name="person-detect", daemon=True),
-        threading.Thread(target=recorder_manager_loop, name="recorder-manager", daemon=True),
-        threading.Thread(target=transcriber_loop, name="transcriber", daemon=True),
-        threading.Thread(target=uploader_loop, name="uploader", daemon=True),
-    ]
+    stop_event = threading.Event()
+    recorder = RecorderManager()
 
-    for t in threads:
-        t.start()
+    detector = PersonDetector()
 
-    def handle_signal(signum, frame):
-        print(f"[PIPELINE] Signal {signum} received, stopping...")
-        stop_event.set()
+    if hasattr(detector, "_start_recording") and hasattr(detector, "_stop_recording"):
+        original_start = detector._start_recording
+        original_stop = detector._stop_recording
 
-    signal.signal(signal.SIGINT, handle_signal)
-    signal.signal(signal.SIGTERM, handle_signal)
+        def wrapped_start():
+            meta = recorder.start_session()
+            original_start()
+            return meta
+
+        def wrapped_stop():
+            original_stop()
+            recorder.finalize_session()
+
+        detector._start_recording = wrapped_start
+        detector._stop_recording = wrapped_stop
 
     try:
-        while not stop_event.is_set():
-            time.sleep(0.5)
+        detector.run(stop_event)
+    except KeyboardInterrupt:
+        stop_event.set()
     finally:
-        print("[PIPELINE] Waiting for threads to exit...")
-        time.sleep(1.0)
-        print("[PIPELINE] Shutdown complete")
+        try:
+            if detector.is_recording:
+                detector._stop_recording()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

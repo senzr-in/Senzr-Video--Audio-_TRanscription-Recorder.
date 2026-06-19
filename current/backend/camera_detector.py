@@ -7,19 +7,18 @@ import cv2
 import numpy as np
 from rknnlite.api import RKNNLite
 
-
 MODEL_PATH = Path(__file__).parent / "models" / "yolov8n.rknn"
 RECORDINGS_DIR = Path("/opt/edge-gateway/recordings")
 RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
 
-CAMERA_INDEX = 0
+CAMERA_INDEX = 1
 FRAME_W = 640
 FRAME_H = 480
 MODEL_INPUT_SIZE = 640
 
 PERSON_CLASS_ID = 0
-OBJ_THRESH = 0.20
-EARLY_OBJ_THRESH = 0.05
+OBJ_THRESH = 0.5
+EARLY_OBJ_THRESH = 0.15
 NMS_THRESH = 0.45
 
 START_CONFIRM_FRAMES = 3
@@ -77,16 +76,12 @@ def decode_branch(box_map, cls_map, score_map, stride, scale, pad_left, pad_top,
     boxes = []
     scores = []
     class_ids = []
-
     if score_map.ndim == 3:
         score_map = score_map[0]
-
     cls_map = sigmoid(cls_map)
     score_map = sigmoid(score_map)
     dists = dfl_decode(box_map)
-
     _, h, w = cls_map.shape
-
     for gy in range(h):
         for gx in range(w):
             obj_score = float(score_map[gy, gx])
@@ -106,71 +101,53 @@ def decode_branch(box_map, cls_map, score_map, stride, scale, pad_left, pad_top,
                         f"final={score:.3f}"
                     )
                 continue
-
-            class_id = PERSON_CLASS_ID
-
+                continue
             left_d = float(dists[0, gy, gx]) * stride
             top_d = float(dists[1, gy, gx]) * stride
             right_d = float(dists[2, gy, gx]) * stride
             bottom_d = float(dists[3, gy, gx]) * stride
-
             cx = (gx + 0.5) * stride
             cy = (gy + 0.5) * stride
-
             x1 = (cx - left_d - pad_left) / scale
             y1 = (cy - top_d - pad_top) / scale
             x2 = (cx + right_d - pad_left) / scale
             y2 = (cy + bottom_d - pad_top) / scale
-
             x1 = max(0, min(orig_w - 1, x1))
             y1 = max(0, min(orig_h - 1, y1))
             x2 = max(0, min(orig_w - 1, x2))
             y2 = max(0, min(orig_h - 1, y2))
-
             if x2 <= x1 or y2 <= y1:
                 continue
-
             boxes.append([int(x1), int(y1), int(x2 - x1), int(y2 - y1)])
-            scores.append(score)
-            class_ids.append(class_id)
-
+            scores.append(person_score)
+            class_ids.append(PERSON_CLASS_ID)
     return boxes, scores, class_ids
 
 
 def decode_yolov8_rknn(outputs, orig_w, orig_h, scale, pad_left, pad_top):
     if len(outputs) != 9:
         raise RuntimeError(f"Expected 9 RKNN outputs, got {len(outputs)}")
-
     all_boxes = []
     all_scores = []
     all_class_ids = []
-
     branches = [
         (outputs[0], outputs[1], outputs[2], 8),
         (outputs[3], outputs[4], outputs[5], 16),
         (outputs[6], outputs[7], outputs[8], 32),
     ]
-
     for box_map, cls_map, score_map, stride in branches:
         box_map = np.squeeze(box_map, axis=0)
         cls_map = np.squeeze(cls_map, axis=0)
         score_map = np.squeeze(score_map, axis=0)
-
-        boxes, scores, class_ids = decode_branch(
-            box_map, cls_map, score_map, stride,
-            scale, pad_left, pad_top, orig_w, orig_h
-        )
+        boxes, scores, class_ids = decode_branch(box_map, cls_map, score_map, stride, scale, pad_left, pad_top, orig_w, orig_h)
         all_boxes.extend(boxes)
         all_scores.extend(scores)
         all_class_ids.extend(class_ids)
-
     if not all_boxes:
         return [], [], []
-
     keep = cv2.dnn.NMSBoxes(all_boxes, all_scores, OBJ_THRESH, NMS_THRESH)
     if keep is None or len(keep) == 0:
         return [], [], []
-
     keep = np.array(keep).reshape(-1)
     return [all_boxes[i] for i in keep], [all_scores[i] for i in keep], [all_class_ids[i] for i in keep]
 
@@ -178,23 +155,19 @@ def decode_yolov8_rknn(outputs, orig_w, orig_h, scale, pad_left, pad_top):
 class PersonDetector:
     def __init__(self, s3_uploader=None):
         self.s3_uploader = s3_uploader
-
         self.rknn = RKNNLite()
         ret = self.rknn.load_rknn(str(MODEL_PATH))
         if ret != 0:
             raise RuntimeError(f"Failed to load RKNN model: {ret}")
-
         ret = self.rknn.init_runtime(core_mask=RKNNLite.NPU_CORE_AUTO)
         if ret != 0:
             raise RuntimeError(f"Failed to init RKNN runtime: {ret}")
-
-        self.cap = cv2.VideoCapture(CAMERA_INDEX)
+        self.cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_W)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_H)
-
         if not self.cap.isOpened():
             raise RuntimeError(f"Cannot open camera index {CAMERA_INDEX}")
-
         self._lock = threading.Lock()
         self._writer = None
         self._recording = False
@@ -247,42 +220,24 @@ class PersonDetector:
     def run(self, stop_event: threading.Event):
         print("[CAMERA] Detection loop started")
         first_output_dump_done = False
-
         while not stop_event.is_set():
             ret, frame = self.cap.read()
             if not ret:
                 time.sleep(0.1)
                 continue
-
             self._frame_counter += 1
             orig_h, orig_w = frame.shape[:2]
-
             input_img, scale, pad_left, pad_top = letterbox(frame, MODEL_INPUT_SIZE)
             input_img = cv2.cvtColor(input_img, cv2.COLOR_BGR2RGB)
             input_img = np.expand_dims(input_img, axis=0)
-
             outputs = self.rknn.inference(inputs=[input_img])
-
             if not first_output_dump_done:
                 print(f"[CAMERA] num outputs: {len(outputs)}")
                 for i, out in enumerate(outputs):
                     print(f"[CAMERA] output {i} shape={out.shape}, dtype={out.dtype}")
                 first_output_dump_done = True
-
             try:
-                boxes, scores, class_ids = decode_yolov8_rknn(
-                    outputs,
-                    orig_w=orig_w,
-                    orig_h=orig_h,
-                    scale=scale,
-                    pad_left=pad_left,
-                    pad_top=pad_top,
-                )
-                if self._frame_counter % 30 == 0:
-                    print(
-                        f"[CAMERA] boxes={len(boxes)} "
-                        f"best_score={max(scores) if scores else 0:.3f}"
-                    )
+                boxes, scores, class_ids = decode_yolov8_rknn(outputs, orig_w=orig_w, orig_h=orig_h, scale=scale, pad_left=pad_left, pad_top=pad_top)
             except Exception as e:
                 print(f"[CAMERA] postprocess error: {e}")
                 time.sleep(0.1)
@@ -302,8 +257,9 @@ class PersonDetector:
             else:
                 self._person_missing_streak += 1
                 self._person_seen_streak = 0
-
             if self._frame_counter % DEBUG_EVERY_N_FRAMES == 0:
+
+
                 print(
                     f"[CAMERA] best_person_score={best_person_score:.3f} "
                     f"person_detected={person_detected} "
@@ -311,12 +267,9 @@ class PersonDetector:
                     f"seen_streak={self._person_seen_streak} "
                     f"missing_streak={self._person_missing_streak}"
                 )
-                else:
-                    print(
-                        f"[CAMERA] no detections seen_streak={self._person_seen_streak} "
-                        f"missing_streak={self._person_missing_streak}"
-                    )
 
+                else:
+                    print(f"[CAMERA] no detections seen_streak={self._person_seen_streak} missing_streak={self._person_missing_streak}")
             with self._lock:
                 if not self._recording:
                     if self._person_seen_streak >= START_CONFIRM_FRAMES:
@@ -324,14 +277,11 @@ class PersonDetector:
                 else:
                     if self._person_missing_streak >= STOP_CONFIRM_FRAMES:
                         self._stop_recording()
-
                 if self._recording and self._writer is not None:
                     self._writer.write(frame)
-
         with self._lock:
             if self._recording:
                 self._stop_recording()
-
         self.cap.release()
         self.rknn.release()
         print("[CAMERA] Detection loop stopped, resources released")
