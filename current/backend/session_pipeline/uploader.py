@@ -1,3 +1,4 @@
+# current/backend/session_pipeline/uploader.py
 import time
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError

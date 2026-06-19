@@ -1,7 +1,6 @@
+# current/backend/session_pipeline/audio_capture.py
 import time
-import math
-import wave
-import pyaudio  # make sure it's in requirements
+import pyaudio
 
 from .config import (
     AUDIO_SAMPLE_RATE,
@@ -11,18 +10,28 @@ from .config import (
 from .queues import audio_frame_queue, stop_event
 from .models import AudioChunk, now_ts
 
+ONBOARD_DEVICE_INDEX = 2  # from your PyAudio test
+
 
 def audio_capture_loop():
-    print("[AUDIO] Capture loop starting")
+    print("[AUDIO] Capture loop starting (on-board mic, device index 2)")
 
     pa = pyaudio.PyAudio()
     frames_per_buffer = int(AUDIO_SAMPLE_RATE * AUDIO_CHUNK_SECONDS)
+
+    info = pa.get_device_info_by_host_api_device_index(0, ONBOARD_DEVICE_INDEX)
+    print(
+        f"[AUDIO] Using device {ONBOARD_DEVICE_INDEX}: "
+        f"name={info.get('name')}, maxInput={info.get('maxInputChannels')}, "
+        f"defaultSR={info.get('defaultSampleRate')}"
+    )
 
     stream = pa.open(
         format=pyaudio.paInt16,
         channels=AUDIO_CHANNELS,
         rate=AUDIO_SAMPLE_RATE,
         input=True,
+        input_device_index=ONBOARD_DEVICE_INDEX,
         frames_per_buffer=frames_per_buffer,
     )
 
@@ -34,10 +43,9 @@ def audio_capture_loop():
             try:
                 audio_frame_queue.put(chunk, timeout=0.1)
             except Exception:
-                # Queue full; drop audio chunk
                 pass
     finally:
         stream.stop_stream()
         stream.close()
         pa.terminate()
-        print("[AUDIO] Capture loop stopped, mic released")
+        print("[AUDIO] Capture loop stopped, on-board mic released")

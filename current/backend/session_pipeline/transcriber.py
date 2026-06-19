@@ -1,17 +1,15 @@
+# current/backend/session_pipeline/transcriber.py
+# Temporary stub: no real Whisper. Marks transcript as completed with placeholder text.
+
 import json
-from pathlib import Path
 
 from .queues import transcription_queue, upload_queue, stop_event
 from .models import TranscriptionJob, UploadJob
 from .config import S3_SESSIONS_PREFIX
 
-# You can later switch this to a Tiny Whisper RK3588-optimized build
-import whisper  # pip install openai-whisper
-
 
 def transcriber_loop():
-    print("[WHISPER] Transcriber thread starting")
-    model = whisper.load_model("tiny")  # or from config
+    print("[WHISPER-STUB] Transcriber stub thread starting")
 
     while not stop_event.is_set():
         try:
@@ -25,11 +23,10 @@ def transcriber_loop():
         transcript_path = session_dir / "transcript.txt"
         session_json_path = session_dir / "session.json"
 
-        print(f"[WHISPER] Processing session {session_id}")
+        print(f"[WHISPER-STUB] Marking transcript for session {session_id}")
 
-        # Run transcription
-        result = model.transcribe(str(audio_path))
-        text = result.get("text", "").strip()
+        # Placeholder transcript text
+        text = "(transcription disabled in this build)"
 
         # Write transcript.txt
         with open(transcript_path, "w") as f:
@@ -44,7 +41,7 @@ def transcriber_loop():
         with open(session_json_path, "w") as f:
             json.dump(meta, f, indent=2)
 
-        # Push upload tasks for transcript + updated session.json
+        # Queue uploads for transcript + updated session.json
         upload_queue.put(
             UploadJob(
                 local_path=transcript_path,
@@ -58,4 +55,4 @@ def transcriber_loop():
             )
         )
 
-        print(f"[WHISPER] Completed session {session_id}")
+        print(f"[WHISPER-STUB] Completed session {session_id}")

@@ -1,9 +1,10 @@
+# current/backend/session_pipeline/queues.py
 import threading
 from queue import Queue
 
 from .models import VideoFrame, AudioChunk, RecordingEvent, TranscriptionJob, UploadJob
 
-# Shared stop event for graceful shutdown
+# Shared stop event
 stop_event = threading.Event()
 
 # Queues
