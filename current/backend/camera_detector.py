@@ -18,8 +18,8 @@ FRAME_H = 480
 MODEL_INPUT_SIZE = 640
 
 PERSON_CLASS_ID = 0
-OBJ_THRESH = 0.5
-EARLY_OBJ_THRESH = 0.15
+OBJ_THRESH = 0.20
+EARLY_OBJ_THRESH = 0.05
 NMS_THRESH = 0.45
 
 START_CONFIRM_FRAMES = 3
@@ -90,15 +90,26 @@ def decode_branch(box_map, cls_map, score_map, stride, scale, pad_left, pad_top,
     for gy in range(h):
         for gx in range(w):
             obj_score = float(score_map[gy, gx])
+            obj_score = float(score_map[gy, gx])
+
             if obj_score < EARLY_OBJ_THRESH:
                 continue
 
-            # Optimization 1: person-only class filtering
-            person_score = cls_map[PERSON_CLASS_ID, gy, gx] * obj_score
-            if person_score < OBJ_THRESH:
+            person_cls = float(cls_map[PERSON_CLASS_ID, gy, gx])
+
+            # RKNN YOLOv8 exports often produce weak objectness.
+            # Use the stronger signal instead of multiplying away detections.
+            score = max(person_cls, person_cls * obj_score)
+
+            if score < OBJ_THRESH:
+                if person_cls > 0.10:
+                    print(
+                        f"obj={obj_score:.3f} "
+                        f"person={person_cls:.3f} "
+                        f"final={score:.3f}"
+                    )
                 continue
 
-            score = float(person_score)
             class_id = PERSON_CLASS_ID
 
             left_d = float(dists[0, gy, gx]) * stride
@@ -270,6 +281,11 @@ class PersonDetector:
                     pad_left=pad_left,
                     pad_top=pad_top,
                 )
+                if self._frame_counter % 30 == 0:
+                    print(
+                        f"[CAMERA] boxes={len(boxes)} "
+                        f"best_score={max(scores) if scores else 0:.3f}"
+                    )
             except Exception as e:
                 print(f"[CAMERA] postprocess error: {e}")
                 time.sleep(0.1)
