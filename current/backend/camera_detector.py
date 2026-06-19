@@ -23,7 +23,7 @@ EARLY_OBJ_THRESH = 0.05
 NMS_THRESH = 0.45
 
 START_CONFIRM_FRAMES = 3
-STOP_CONFIRM_FRAMES = 12
+STOP_CONFIRM_FRAMES = 60
 DEBUG_EVERY_N_FRAMES = 10
 
 COCO_NAMES = [
@@ -90,15 +90,12 @@ def decode_branch(box_map, cls_map, score_map, stride, scale, pad_left, pad_top,
     for gy in range(h):
         for gx in range(w):
             obj_score = float(score_map[gy, gx])
-            obj_score = float(score_map[gy, gx])
 
             if obj_score < EARLY_OBJ_THRESH:
                 continue
 
             person_cls = float(cls_map[PERSON_CLASS_ID, gy, gx])
 
-            # RKNN YOLOv8 exports often produce weak objectness.
-            # Use the stronger signal instead of multiplying away detections.
             score = max(person_cls, person_cls * obj_score)
 
             if score < OBJ_THRESH:
@@ -291,7 +288,13 @@ class PersonDetector:
                 time.sleep(0.1)
                 continue
 
-            person_detected = any(cid == PERSON_CLASS_ID for cid in class_ids)
+            best_person_score = 0.0
+
+            for cid, score in zip(class_ids, scores):
+                if cid == PERSON_CLASS_ID:
+                    best_person_score = max(best_person_score, float(score))
+
+            person_detected = best_person_score > 0.50
 
             if person_detected:
                 self._person_seen_streak += 1
@@ -301,15 +304,13 @@ class PersonDetector:
                 self._person_seen_streak = 0
 
             if self._frame_counter % DEBUG_EVERY_N_FRAMES == 0:
-                if scores:
-                    best_idx = int(np.argmax(scores))
-                    best_label = COCO_NAMES[class_ids[best_idx]]
-                    best_score = scores[best_idx]
-                    print(
-                        f"[CAMERA] best={best_label} score={best_score:.3f} "
-                        f"person_detected={person_detected} "
-                        f"seen_streak={self._person_seen_streak} missing_streak={self._person_missing_streak}"
-                    )
+                print(
+                    f"[CAMERA] best_person_score={best_person_score:.3f} "
+                    f"person_detected={person_detected} "
+                    f"recording={self._recording} "
+                    f"seen_streak={self._person_seen_streak} "
+                    f"missing_streak={self._person_missing_streak}"
+                )
                 else:
                     print(
                         f"[CAMERA] no detections seen_streak={self._person_seen_streak} "

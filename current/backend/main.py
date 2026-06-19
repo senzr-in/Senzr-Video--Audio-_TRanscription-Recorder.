@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
@@ -6,6 +6,7 @@ import socket
 import logging
 import threading
 import json
+import traceback
 
 from .configmanager import readconfig, writeconfig
 from .database import initdb, logconfigchange
@@ -104,13 +105,14 @@ class CameraManager:
                 self._camera_enabled = True
                 log.info("[CameraManager] Camera turned ON, detector thread started")
                 return {"ok": True, "message": "Camera turned ON"}
-            except Exception as e:
-                log.error(f"[CameraManager] Failed to start detector: {e}")
+            except Exception:
+                traceback.print_exc()
+                log.exception("Failed to start detector")
                 self._camera_enabled = False
                 self._detector = None
                 self._thread = None
                 self._stop_event = None
-                return {"ok": False, "message": f"Failed to start camera: {e}"}
+                raise
 
     def turn_off(self) -> dict:
         with self._lock:
@@ -251,9 +253,17 @@ def camera_status():
 
 @app.post("/api/camera/on")
 def camera_on():
-    result = camera_manager.turn_on()
-    status_code = 200 if result["ok"] else 500
-    return JSONResponse(content=result, status_code=status_code)
+    try:
+        result = camera_manager.turn_on()
+        status_code = 200 if result["ok"] else 500
+        return JSONResponse(content=result, status_code=status_code)
+    except Exception:
+        traceback.print_exc()
+        log.exception("Camera ON failed")
+        raise HTTPException(
+            status_code=500,
+            detail=str(camera_manager._detector if hasattr(camera_manager, '_detector') else "Unknown error")
+        )
 
 
 @app.post("/api/camera/off")

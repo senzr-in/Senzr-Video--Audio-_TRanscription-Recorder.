@@ -1,18 +1,20 @@
-#!/bin/bash
+0~#!/bin/bash
 
-# Edge Gateway Framework - Shutdown Script
-
-echo "[1/4] Stopping nginx..."
+echo "[1/5] Stopping nginx..."
 systemctl stop nginx
 
-echo "[2/4] Stopping edge-gateway (FastAPI)..."
+echo "[2/5] Stopping edge-gateway-session..."
+systemctl stop edge-gateway-session
+
+echo "[3/5] Stopping edge-gateway..."
 systemctl stop edge-gateway
 
-echo "[3/4] Stopping dnsmasq..."
+echo "[4/5] Stopping dnsmasq..."
 systemctl stop dnsmasq
 
-echo "[4/4] Stopping hostapd..."
+echo "[5/5] Stopping hostapd..."
 systemctl stop hostapd
 
 echo ""
 echo "Stack is DOWN."
+
