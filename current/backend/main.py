@@ -3,10 +3,10 @@ import traceback
 import logging
 from fastapi import FastAPI, HTTPException
 
-from backend.config_manager import read_config, write_config
-from backend.database import init_db
-from backend.models import ConfigModel
-from session_pipeline import SessionPipeline
+from config_manager import read_config, write_config
+from database import init_db
+from models import ConfigModel
+from session_pipeline.run_session_pipeline import SessionPipeline
 
 log = logging.getLogger("edge-gateway")
 logging.basicConfig(level=logging.INFO)

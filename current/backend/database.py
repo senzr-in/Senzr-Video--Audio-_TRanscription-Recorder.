@@ -1,43 +1,34 @@
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent / "database" / "edgegateway.db"
+DB_PATH = Path(__file__).parent / "database" / "edge_gateway.db"
 
-def initdb():
+
+def init_db():
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS systeminfo (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        key TEXT UNIQUE NOT NULL,
-        value TEXT NOT NULL
-    )
+        CREATE TABLE IF NOT EXISTS system_info (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            key TEXT UNIQUE NOT NULL,
+            value TEXT NOT NULL
+        )
     """)
 
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS configchanges (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp TEXT NOT NULL,
-        clientip TEXT,
-        clientmac TEXT,
-        useragent TEXT,
-        changedfields TEXT NOT NULL,
-        oldconfig TEXT NOT NULL,
-        newconfig TEXT NOT NULL
-    )
+        CREATE TABLE IF NOT EXISTS config_changes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            client_ip TEXT,
+            client_mac TEXT,
+            user_agent TEXT,
+            changed_fields TEXT,
+            old_config TEXT,
+            new_config TEXT
+        )
     """)
 
-    conn.commit()
-    conn.close()
-
-def logconfigchange(timestamp, clientip, clientmac, useragent, changedfields, oldconfig, newconfig):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("""
-    INSERT INTO configchanges
-    (timestamp, clientip, clientmac, useragent, changedfields, oldconfig, newconfig)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (timestamp, clientip, clientmac, useragent, changedfields, oldconfig, newconfig))
     conn.commit()
     conn.close()

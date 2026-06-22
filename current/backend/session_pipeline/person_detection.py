@@ -105,21 +105,17 @@ def _decode_yolov8(outputs, orig_w, orig_h, scale, pad_left, pad_top):
 
 
 class PersonDetection:
-    """
-    Reads video_frame_queue.
-    Emits START_RECORDING / STOP_RECORDING via event_queue.
-    Never touches files, audio, or uploads.
-    """
-
     START_EVENT = "START_RECORDING"
     STOP_EVENT = "STOP_RECORDING"
 
     def __init__(self, event_queue: queue.Queue):
         self._event_queue = event_queue
         self._rknn = RKNNLite()
+
         ret = self._rknn.load_rknn(str(MODEL_PATH))
         if ret != 0:
             raise RuntimeError(f"RKNN load failed: {ret}")
+
         ret = self._rknn.init_runtime(core_mask=RKNNLite.NPU_CORE_AUTO)
         if ret != 0:
             raise RuntimeError(f"RKNN init failed: {ret}")
@@ -146,7 +142,13 @@ class PersonDetection:
 
                 try:
                     outputs = self._rknn.inference(inputs=[inp])
-                    boxes, scores, ids = _decode_yolov8(outputs, orig_w, orig_h, scale, pad_left, pad_top)
+                    if not outputs:
+                        print("[PersonDetection] inference returned no outputs")
+                        continue
+
+                    boxes, scores, ids = _decode_yolov8(
+                        outputs, orig_w, orig_h, scale, pad_left, pad_top
+                    )
                 except Exception as e:
                     print(f"[PersonDetection] inference error: {e}")
                     continue
@@ -176,7 +178,11 @@ class PersonDetection:
 
                 if self._frame_count % 30 == 0:
                     best = max((s for c, s in zip(ids, scores) if c == PERSON_CLASS_ID), default=0.0)
-                    print(f"[PersonDetection] frame={self._frame_count} person={person_found} best={best:.2f} streak={self._seen_streak} recording={self._recording}")
+                    print(
+                        f"[PersonDetection] frame={self._frame_count} "
+                        f"person={person_found} best={best:.2f} "
+                        f"streak={self._seen_streak} recording={self._recording}"
+                    )
 
         finally:
             self._rknn.release()
