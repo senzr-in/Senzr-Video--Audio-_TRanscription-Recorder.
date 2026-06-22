@@ -1,35 +1,63 @@
 import subprocess
 import threading
+import time
 from pathlib import Path
 
-from .config import AUDIO_DEVICE, AUDIO_CHANNELS, AUDIO_RATE, FFMPEG_BIN
 
+class AudioRecorder:
+    DEVICE = "hw:2,0"
+    SAMPLE_RATE = 16000
+    CHANNELS = 2
+    FORMAT = "S16_LE"
 
-class AudioCaptureWorker:
-    def __init__(self, out_path: Path, stop_event: threading.Event):
-        self.out_path = Path(out_path)
-        self.stop_event = stop_event
-        self.proc = None
+    def __init__(self, output_file):
+        self.output_file = str(output_file)
+        self.process = None
+        self.lock = threading.Lock()
 
-    def run(self):
-        cmd = [
-            FFMPEG_BIN,
-            "-y",
-            "-f", "alsa",
-            "-ac", str(AUDIO_CHANNELS),
-            "-ar", str(AUDIO_RATE),
-            "-i", AUDIO_DEVICE,
-            "-c:a", "pcm_s16le",
-            str(self.out_path),
-        ]
-        self.proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        while not self.stop_event.is_set():
-            if self.proc.poll() is not None:
-                break
-            self.stop_event.wait(0.2)
-        if self.proc and self.proc.poll() is None:
-            self.proc.terminate()
+    def start(self):
+        with self.lock:
+            if self.process is not None:
+                return
+
+            Path(self.output_file).parent.mkdir(
+                parents=True,
+                exist_ok=True
+            )
+
+            cmd = [
+                "/usr/bin/arecord",
+                "-D", self.DEVICE,
+                "-f", self.FORMAT,
+                "-r", str(self.SAMPLE_RATE),
+                "-c", str(self.CHANNELS),
+                self.output_file
+            ]
+
+            print("[AUDIO CMD]", " ".join(cmd))
+
+            self.process = subprocess.Popen(cmd)
+
+            time.sleep(1)
+
+            rc = self.process.poll()
+
+            print("[AUDIO RC]", rc)
+
+            print(f"[AUDIO] Started -> {self.output_file}")
+
+    def stop(self):
+        with self.lock:
+            if self.process is None:
+                return
+
+            self.process.terminate()
+
             try:
-                self.proc.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                self.proc.kill()
+                self.process.wait(timeout=5)
+            except Exception:
+                self.process.kill()
+
+            self.process = None
+
+            print(f"[AUDIO] Stopped -> {self.output_file}")

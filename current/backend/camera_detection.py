@@ -1,7 +1,5 @@
 from session_pipeline.audio_capture import AudioRecorder
 from session_pipeline.session_manager import SessionManager
-from session_pipeline.transcriber import transcribe, write_transcript_json
-from session_pipeline.uploader import upload_session
 
 import threading
 import time
@@ -22,7 +20,7 @@ FRAME_H = 480
 MODEL_INPUT_SIZE = 640
 
 PERSON_CLASS_ID = 0
-OBJ_THRESH = 0.3
+OBJ_THRESH = 0.30
 EARLY_OBJ_THRESH = 0.15
 NMS_THRESH = 0.45
 
@@ -258,33 +256,6 @@ class PersonDetector:
         if self.audio_recorder:
             self.audio_recorder.stop()
         
-        # Transcribe audio
-        audio_path = self.session_manager.get_audio_path()
-        video_path = self.session_manager.get_video_path()
-        
-        try:
-            print(f"[TRANSCRIBE] Starting transcription of {audio_path}")
-            transcript = transcribe(str(audio_path))
-            transcript_file = write_transcript_json(
-                self.session_id,
-                self.session_manager.session_dir,
-                transcript
-            )
-            print(f"[TRANSCRIBE] Done -> {transcript_file}")
-        except Exception as e:
-            print(f"[TRANSCRIBE] Error: {e}")
-        
-        # Upload session to S3
-        try:
-            print(f"[S3] Uploading session {self.session_id}")
-            upload_session(
-                self.session_id,
-                str(self.session_manager.session_dir)
-            )
-            print(f"[S3] Upload complete")
-        except Exception as e:
-            print(f"[S3 ERROR] {e}")
-        
         saved_path = self._out_path
         if self._writer is not None:
             self._writer.release()
@@ -339,7 +310,7 @@ class PersonDetector:
             if best_person_score > 0:
                 print(f"[DEBUG] best_person_score={best_person_score:.3f}")
 
-            person_detected = best_person_score > 0.30
+            person_detected = best_person_score > 0.50
 
             if person_detected:
                 self._person_seen_streak += 1
