@@ -1,31 +1,31 @@
 #!/bin/bash
-
 # Edge Gateway Framework - Startup Script
+# Brings up full stack: wlan0 IP, hostapd, dnsmasq, edge-gateway backend, nginx.
 
-set -e
+set -e  # stop on first error
 
-echo "[1/5] Assigning static IP to wlan0..."
-ip addr flush dev wlan0
+echo "1/5 Assigning static IP to wlan0..."
+ip addr flush dev wlan0 || true
 ip addr add 192.168.4.1/24 dev wlan0
 ip link set wlan0 up
-echo "      wlan0 -> 192.168.4.1/24 [OK]"
+echo "   wlan0 -> 192.168.4.1/24 OK"
 
-echo "[2/5] Starting hostapd (Wi-Fi AP)..."
+echo "2/5 Starting hostapd (WiFi AP)..."
 systemctl start hostapd
 sleep 1
-echo "      hostapd [OK]"
+echo "   hostapd OK"
 
-echo "[3/5] Starting dnsmasq (DHCP/DNS)..."
+echo "3/5 Starting dnsmasq (DHCP/DNS)..."
 systemctl start dnsmasq
-echo "      dnsmasq [OK]"
+echo "   dnsmasq OK"
 
-echo "[4/5] Starting edge-gateway (FastAPI backend)..."
+echo "4/5 Starting edge-gateway (FastAPI backend)..."
 systemctl start edge-gateway
-echo "      edge-gateway [OK]"
+echo "   edge-gateway OK"
 
-echo "[5/5] Starting nginx (Web Server)..."
+echo "5/5 Starting nginx (Web server + reverse proxy)..."
 systemctl start nginx
-echo "      nginx [OK]"
+echo "   nginx OK"
 
-echo ""
-echo "Stack is UP. Connect to 'EdgeGateway' and open: http://192.168.4.1"
+echo
+echo "Stack is UP. Connect to 'EdgeGateway' and open http://192.168.4.1"
