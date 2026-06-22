@@ -1,94 +1,174 @@
 import json
-import shutil
+import queue
 import threading
-import subprocess
-from datetime import datetime
+import wave
+import struct
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
-from .config import SESSION_BASE_DIR, FFMPEG_BIN
-from .models import SessionMeta
-from .transcriber import Transcriber
-from .uploader import Uploader
+import cv2
+
+from session_pipeline.config import (
+    LOCAL_STORAGE, FRAME_W, FRAME_H, CAMERA_FPS,
+    AUDIO_CHANNELS, AUDIO_RATE, AUDIO_FORMAT,
+)
+from session_pipeline.queues import audio_frame_queue, transcription_queue, upload_queue
+from session_pipeline.person_detection import PersonDetection
 
 
 class RecorderManager:
-    def __init__(self, uploader=None):
-        self.uploader = uploader or Uploader()
-        self.transcriber = Transcriber()
-        self.lock = threading.Lock()
-        self.current_session = None
-        self.session_dir = None
-        self.video_path = None
-        self.audio_path = None
+    """
+    Sole owner of session state.
+    Listens for START_RECORDING / STOP_RECORDING from event_queue.
+    Drains audio_frame_queue and writes audio.wav.
+    Receives video frames pushed by caller (run loop).
+    """
 
-    def _new_session_id(self):
-        return datetime.now().strftime("session_%Y%m%d_%H%M%S")
+    def __init__(self, event_queue: queue.Queue, video_frame_queue_ref):
+        self._event_queue = event_queue
+        self._video_frame_queue = video_frame_queue_ref
 
-    def start_session(self):
-        with self.lock:
-            if self.current_session is not None:
-                return self.current_session
+        self._session_dir: Path = None
+        self._session_id: str = None
+        self._video_writer = None
+        self._wav_file = None
+        self._recording = False
+        self._start_time: str = None
 
-            session_id = self._new_session_id()
-            session_dir = SESSION_BASE_DIR / session_id
-            session_dir.mkdir(parents=True, exist_ok=True)
+        LOCAL_STORAGE.mkdir(parents=True, exist_ok=True)
 
-            self.session_dir = session_dir
-            self.video_path = session_dir / "video.mp4"
-            self.audio_path = session_dir / "audio.wav"
+    # ── session helpers ──────────────────────────────────────────────────────
 
-            meta = SessionMeta(
-                session_id=session_id,
-                session_dir=str(session_dir),
-                started_at=datetime.utcnow().isoformat() + "Z",
-            )
-            self.current_session = meta
-            self._write_session_json(meta)
-            return meta
+    def _create_session(self):
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self._session_id = f"session_{ts}"
+        self._session_dir = LOCAL_STORAGE / self._session_id
+        self._session_dir.mkdir(parents=True, exist_ok=True)
+        self._start_time = datetime.now(timezone.utc).isoformat()
+        print(f"[RecorderManager] Session folder: {self._session_dir}")
 
-    def _write_session_json(self, meta: SessionMeta):
-        (Path(meta.session_dir) / "session.json").write_text(
-            json.dumps(meta.to_dict(), indent=2),
-            encoding="utf-8",
+    def _init_video_writer(self):
+        path = self._session_dir / "video.mp4"
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        self._video_writer = cv2.VideoWriter(str(path), fourcc, CAMERA_FPS, (FRAME_W, FRAME_H))
+        if not self._video_writer.isOpened():
+            raise RuntimeError(f"VideoWriter failed: {path}")
+        return path
+
+    def _init_wav_writer(self):
+        path = self._session_dir / "audio.wav"
+        self._wav_file = wave.open(str(path), "wb")
+        self._wav_file.setnchannels(AUDIO_CHANNELS)
+        self._wav_file.setsampwidth(2)   # S16_LE = 2 bytes
+        self._wav_file.setframerate(AUDIO_RATE)
+        return path
+
+    def _write_session_json(self, status="processing", extra=None):
+        data = {
+            "session_id": self._session_id,
+            "start_time": self._start_time,
+            "transcript_status": status,
+        }
+        if extra:
+            data.update(extra)
+        path = self._session_dir / "session.json"
+        path.write_text(json.dumps(data, indent=2))
+        return path
+
+    def _drain_audio_queue(self):
+        while True:
+            try:
+                item = audio_frame_queue.get_nowait()
+                if self._wav_file:
+                    self._wav_file.writeframes(item["audio_chunk"])
+            except queue.Empty:
+                break
+
+    # ── start / stop ─────────────────────────────────────────────────────────
+
+    def _on_start(self):
+        self._create_session()
+        video_path = self._init_video_writer()
+        audio_path = self._init_wav_writer()
+        json_path  = self._write_session_json(status="processing")
+        self._recording = True
+        print(f"[RecorderManager] Recording STARTED — {self._session_id}")
+        print(f"  video: {video_path}")
+        print(f"  audio: {audio_path}")
+        print(f"  meta:  {json_path}")
+
+    def _on_stop(self):
+        self._recording = False
+
+        # Drain remaining audio
+        self._drain_audio_queue()
+
+        # Finalise video
+        if self._video_writer:
+            self._video_writer.release()
+            self._video_writer = None
+
+        # Finalise audio
+        if self._wav_file:
+            self._wav_file.close()
+            self._wav_file = None
+
+        end_time = datetime.now(timezone.utc).isoformat()
+        video_path = self._session_dir / "video.mp4"
+        audio_path = self._session_dir / "audio.wav"
+        json_path  = self._write_session_json(
+            status="processing",
+            extra={"end_time": end_time},
         )
 
-    def finalize_session(self, started_at=None):
-        with self.lock:
-            if self.current_session is None or self.session_dir is None:
-                return None
+        print(f"[RecorderManager] Recording STOPPED — {self._session_id}")
 
-            meta = self.current_session
-            meta.ended_at = datetime.utcnow().isoformat() + "Z"
-            meta.status = "finalizing"
+        # Enqueue uploads (video + audio + session.json)
+        for f in [video_path, audio_path, json_path]:
+            upload_queue.put({"session_id": self._session_id, "file_path": str(f)})
 
-            self._write_session_json(meta)
+        # Enqueue transcription
+        transcription_queue.put({
+            "session_id": self._session_id,
+            "session_dir": str(self._session_dir),
+            "audio_path": str(audio_path),
+        })
 
-            av_path = self.session_dir / "session_av.mp4"
-            if self.video_path.exists() and self.audio_path.exists():
-                cmd = [
-                    FFMPEG_BIN,
-                    "-y",
-                    "-i", str(self.video_path),
-                    "-i", str(self.audio_path),
-                    "-c:v", "copy",
-                    "-c:a", "aac",
-                    "-shortest",
-                    str(av_path),
-                ]
-                subprocess.run(cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print(f"[RecorderManager] Queued uploads + transcription for {self._session_id}")
 
-            transcript = self.transcriber.transcribe(self.session_dir)
-            meta.transcript_status = "done"
-            meta.status = "complete"
+    # ── main run loop ─────────────────────────────────────────────────────────
 
-            self._write_session_json(meta)
+    def run(self, stop_event: threading.Event):
+        print("[RecorderManager] Starting")
+        while not stop_event.is_set():
+            # Handle events (non-blocking)
+            try:
+                event = self._event_queue.get_nowait()
+                if event == PersonDetection.START_EVENT and not self._recording:
+                    self._on_start()
+                elif event == PersonDetection.STOP_EVENT and self._recording:
+                    self._on_stop()
+            except queue.Empty:
+                pass
 
-            if self.uploader:
-                self.uploader.upload_session(self.session_dir)
+            # Write video frames from video_frame_queue during active session
+            if self._recording and self._video_writer:
+                try:
+                    item = self._video_frame_queue.get_nowait()
+                    self._video_writer.write(item["frame"])
+                except queue.Empty:
+                    pass
 
-            self.current_session = None
-            self.session_dir = None
-            self.video_path = None
-            self.audio_path = None
+            # Write audio chunks continuously
+            if self._recording and self._wav_file:
+                self._drain_audio_queue()
 
-            return transcript
+            time.sleep(0.001)
+
+        # Cleanup on shutdown
+        if self._recording:
+            print("[RecorderManager] Stop signal during active session — finalising")
+            self._on_stop()
+
+        print("[RecorderManager] Stopped")

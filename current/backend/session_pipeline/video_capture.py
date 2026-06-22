@@ -1,38 +1,55 @@
-import threading
 import time
-from pathlib import Path
+import threading
+import queue
+from datetime import datetime
 
 import cv2
 
-from .config import CAMERA_INDEX, FRAME_W, FRAME_H, FRAME_RATE
+from session_pipeline.config import (
+    CAMERA_INDEX, FRAME_W, FRAME_H, CAMERA_FPS,
+)
+from session_pipeline.queues import video_frame_queue
 
 
-class VideoCaptureWorker:
-    def __init__(self, out_path: Path, stop_event: threading.Event):
-        self.out_path = Path(out_path)
-        self.stop_event = stop_event
-        self.cap = None
-        self.writer = None
+class VideoCapture:
+    def __init__(self):
+        self._cap = None
 
-    def run(self):
-        self.cap = cv2.VideoCapture(CAMERA_INDEX)
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_W)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_H)
-
-        if not self.cap.isOpened():
+    def _open_camera(self):
+        cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_V4L2)
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_W)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_H)
+        cap.set(cv2.CAP_PROP_FPS, CAMERA_FPS)
+        if not cap.isOpened():
             raise RuntimeError(f"Cannot open camera index {CAMERA_INDEX}")
+        return cap
 
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        self.writer = cv2.VideoWriter(str(self.out_path), fourcc, FRAME_RATE, (FRAME_W, FRAME_H))
+    def run(self, stop_event: threading.Event):
+        print("[VideoCapture] Starting")
+        self._cap = self._open_camera()
 
-        while not self.stop_event.is_set():
-            ret, frame = self.cap.read()
-            if not ret:
-                time.sleep(0.05)
-                continue
-            self.writer.write(frame)
+        try:
+            while not stop_event.is_set():
+                ret, frame = self._cap.read()
+                if not ret:
+                    time.sleep(0.05)
+                    continue
 
-        if self.writer is not None:
-            self.writer.release()
-        if self.cap is not None:
-            self.cap.release()
+                item = {
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "frame": frame,
+                }
+
+                try:
+                    video_frame_queue.put_nowait(item)
+                except queue.Full:
+                    try:
+                        video_frame_queue.get_nowait()
+                    except queue.Empty:
+                        pass
+                    video_frame_queue.put_nowait(item)
+
+        finally:
+            self._cap.release()
+            print("[VideoCapture] Camera released")
