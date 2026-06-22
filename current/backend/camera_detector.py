@@ -1,7 +1,7 @@
-from session_pipeline.audio_capture import AudioRecorder
-from session_pipeline.session_manager import SessionManager
-from session_pipeline.transcriber import transcribe, write_transcript_json
-from session_pipeline.uploader import upload_session
+from .session_pipeline.audio_capture import AudioRecorder
+from .session_pipeline.session_manager import SessionManager
+from .session_pipeline.transcriber import transcribe, write_transcript_json
+from .session_pipeline.uploader import upload_session
 
 import threading
 import time
