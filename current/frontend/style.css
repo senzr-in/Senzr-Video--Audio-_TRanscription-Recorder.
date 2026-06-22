@@ -1,20 +1,15 @@
 /*
  * Edge Gateway v2.0.0 — Camera Control Dashboard
- * Art direction: embedded AI appliance → functional, dark-first, teal accent
- * Palette: dark surfaces + teal primary + warm amber for ON state + red for recording
- * Typography: system sans-serif stack (no CDN dependency on device)
+ * Palette: warm cream + teal
  */
 
-/* ── Design Tokens ──────────────────────────────────────────────────────── */
 :root {
-  /* Type scale (fluid) */
   --text-xs:   clamp(0.75rem,  0.7rem  + 0.25vw, 0.875rem);
   --text-sm:   clamp(0.875rem, 0.8rem  + 0.35vw, 1rem);
   --text-base: clamp(1rem,     0.95rem + 0.25vw, 1.125rem);
   --text-lg:   clamp(1.125rem, 1rem    + 0.75vw, 1.5rem);
   --text-xl:   clamp(1.5rem,   1.2rem  + 1.25vw, 2.25rem);
 
-  /* Spacing (4px grid) */
   --space-1:  0.25rem;
   --space-2:  0.5rem;
   --space-3:  0.75rem;
@@ -25,77 +20,72 @@
   --space-10: 2.5rem;
   --space-12: 3rem;
 
-  /* Radius */
   --radius-sm: 0.375rem;
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
   --radius-xl: 1rem;
 
-  /* Transition */
   --transition: 180ms cubic-bezier(0.16, 1, 0.3, 1);
 
-  /* Dark palette (default) */
-  --color-bg:             #111318;
-  --color-surface:        #181c23;
-  --color-surface-2:      #1e2330;
-  --color-border:         rgba(255,255,255,0.08);
-  --color-divider:        rgba(255,255,255,0.06);
+  --color-bg:             #1b1712;
+  --color-surface:        #241f18;
+  --color-surface-2:      #2c261e;
+  --color-border:         rgba(244,225,193,0.10);
+  --color-divider:        rgba(244,225,193,0.07);
 
-  --color-text:           #d8dce8;
-  --color-text-muted:     #7a8099;
-  --color-text-faint:     #4a5068;
+  --color-text:           #f4e1c1;
+  --color-text-muted:     #c9b89d;
+  --color-text-faint:     #8d7a63;
 
-  --color-primary:        #38b2c0;
-  --color-primary-hover:  #4fc8d8;
-  --color-primary-bg:     rgba(56, 178, 192, 0.12);
+  --color-primary:        #008080;
+  --color-primary-hover:  #0a9a9a;
+  --color-primary-bg:     rgba(0, 128, 128, 0.18);
 
-  --color-on:             #4ade80;   /* camera ON / online green */
-  --color-off:            #6b7280;   /* camera OFF grey */
-  --color-recording:      #f87171;   /* recording red */
-  --color-idle:           #7a8099;
-  --color-file:           #93c5fd;   /* filename blue */
+  --color-on:             #008080;
+  --color-off:            #9b876d;
+  --color-recording:      #ff6b6b;
+  --color-idle:           #c9b89d;
+  --color-file:           #f4e1c1;
 
-  --color-btn-on-bg:      #166534;
-  --color-btn-on-text:    #4ade80;
-  --color-btn-on-hover:   #14532d;
-  --color-btn-on-active:  #15803d;
+  --color-btn-on-bg:      rgba(0, 128, 128, 0.22);
+  --color-btn-on-text:    #f4e1c1;
+  --color-btn-on-hover:   rgba(0, 128, 128, 0.34);
+  --color-btn-on-active:  rgba(0, 128, 128, 0.42);
 
-  --color-btn-off-bg:     #1f1f24;
-  --color-btn-off-text:   #9ca3af;
-  --color-btn-off-hover:  #2d2d35;
+  --color-btn-off-bg:     rgba(244,225,193,0.04);
+  --color-btn-off-text:   #c9b89d;
+  --color-btn-off-hover:  rgba(244,225,193,0.08);
 
   --shadow-card:
-    0 1px 2px rgba(0,0,0,0.3),
-    0 4px 16px rgba(0,0,0,0.25);
+    0 1px 2px rgba(0,0,0,0.35),
+    0 4px 16px rgba(0,0,0,0.28);
 }
 
-/* Light mode */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
-    --color-bg:             #f4f5f7;
-    --color-surface:        #ffffff;
-    --color-surface-2:      #f9fafb;
-    --color-border:         rgba(0,0,0,0.09);
-    --color-divider:        rgba(0,0,0,0.06);
-    --color-text:           #1a1e2a;
-    --color-text-muted:     #5a6480;
-    --color-text-faint:     #a0a8bf;
-    --color-primary:        #0d7a85;
-    --color-primary-hover:  #0b6870;
-    --color-primary-bg:     rgba(13, 122, 133, 0.08);
-    --color-btn-on-bg:      #dcfce7;
-    --color-btn-on-text:    #15803d;
-    --color-btn-on-hover:   #bbf7d0;
-    --color-btn-off-bg:     #f1f2f4;
-    --color-btn-off-text:   #6b7280;
-    --color-btn-off-hover:  #e5e7eb;
+    --color-bg:             #f4e1c1;
+    --color-surface:        #fff7ea;
+    --color-surface-2:      #f8efdf;
+    --color-border:         rgba(0,128,128,0.14);
+    --color-divider:        rgba(0,128,128,0.10);
+    --color-text:           #1b1712;
+    --color-text-muted:     #5f5548;
+    --color-text-faint:     #8d7a63;
+    --color-primary:        #008080;
+    --color-primary-hover:  #0a9a9a;
+    --color-primary-bg:     rgba(0, 128, 128, 0.10);
+    --color-btn-on-bg:      #d8f0ef;
+    --color-btn-on-text:    #006b6b;
+    --color-btn-on-hover:   #c9eceb;
+    --color-btn-off-bg:     #f1ebe0;
+    --color-btn-off-text:   #6f6559;
+    --color-btn-off-hover:  #e8dfd0;
     --shadow-card:
-      0 1px 2px rgba(0,0,0,0.06),
-      0 4px 16px rgba(0,0,0,0.07);
+      0 1px 2px rgba(0,0,0,0.08),
+      0 4px 16px rgba(0,0,0,0.08);
   }
 }
 
-/* ── Base reset ─────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html {
@@ -110,7 +100,7 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   font-size: var(--text-base);
   color: var(--color-text);
-  background: var(--color-bg);
+  background: radial-gradient(circle at top, rgba(0,128,128,0.12), transparent 28%), var(--color-bg);
   line-height: 1.6;
 }
 
@@ -139,14 +129,12 @@ button:active { transform: scale(0.97); }
   }
 }
 
-/* ── Layout ─────────────────────────────────────────────────────────────── */
 .container {
   max-width: 720px;
   margin: 0 auto;
   padding: var(--space-8) var(--space-4);
 }
 
-/* ── Hero / Header ──────────────────────────────────────────────────────── */
 .hero {
   margin-bottom: var(--space-8);
 }
@@ -178,7 +166,7 @@ button:active { transform: scale(0.97); }
   font-weight: 600;
   background: var(--color-primary-bg);
   color: var(--color-primary);
-  border: 1px solid rgba(56,178,192,0.25);
+  border: 1px solid rgba(0,128,128,0.28);
   padding: 0.15em 0.55em;
   border-radius: var(--radius-full, 9999px);
   letter-spacing: 0.04em;
@@ -191,7 +179,6 @@ button:active { transform: scale(0.97); }
   margin-top: var(--space-1);
 }
 
-/* ── Cards ──────────────────────────────────────────────────────────────── */
 .card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -216,7 +203,6 @@ button:active { transform: scale(0.97); }
   flex-shrink: 0;
 }
 
-/* ── Status grid (Device Status) ─────────────────────────────────────────── */
 .status-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -230,7 +216,6 @@ button:active { transform: scale(0.97); }
   padding: var(--space-4);
 }
 
-/* ── Labels and values ──────────────────────────────────────────────────── */
 .label {
   display: block;
   font-size: var(--text-xs);
@@ -247,7 +232,6 @@ button:active { transform: scale(0.97); }
   color: var(--color-text);
 }
 
-/* Status colours */
 .status-on        { color: var(--color-on); }
 .status-off       { color: var(--color-off); }
 .status-recording { color: var(--color-recording); }
@@ -256,7 +240,6 @@ button:active { transform: scale(0.97); }
 .file-value       { font-size: var(--text-sm); font-weight: 500; word-break: break-all; }
 .file-present     { color: var(--color-file); }
 
-/* Loading shimmer */
 @keyframes shimmer {
   0%   { background-position: -200% 0; }
   100% { background-position:  200% 0; }
@@ -276,7 +259,6 @@ button:active { transform: scale(0.97); }
   min-width: 80px;
 }
 
-/* ── Setting rows (Detection Settings) ─────────────────────────────────── */
 .setting-row {
   display: flex;
   align-items: center;
@@ -299,7 +281,6 @@ button:active { transform: scale(0.97); }
   margin: 0 calc(-1 * var(--space-6));
 }
 
-/* ── Camera control buttons ─────────────────────────────────────────────── */
 .camera-controls {
   display: flex;
   gap: var(--space-2);
@@ -322,7 +303,7 @@ button:active { transform: scale(0.97); }
 .btn-on {
   background: var(--color-btn-on-bg);
   color: var(--color-btn-on-text);
-  border: 1px solid rgba(74, 222, 128, 0.2);
+  border: 1px solid rgba(0, 128, 128, 0.35);
 }
 
 .btn-on:hover:not(:disabled) {
@@ -345,16 +326,14 @@ button:active { transform: scale(0.97); }
   transform: none;
 }
 
-/* Active/selected state — visually depressed when that mode is current */
 .btn-on.btn-active {
-  box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.35);
+  box-shadow: 0 0 0 2px rgba(0, 128, 128, 0.35);
 }
 
 .btn-off.btn-active {
-  box-shadow: 0 0 0 2px rgba(107, 114, 128, 0.35);
+  box-shadow: 0 0 0 2px rgba(244, 225, 193, 0.22);
 }
 
-/* ── Recording dot indicator ─────────────────────────────────────────────── */
 .recording-indicator {
   width: 12px;
   height: 12px;
@@ -374,7 +353,6 @@ button:active { transform: scale(0.97); }
   50%       { opacity: 0.5; transform: scale(1.25); }
 }
 
-/* ── Message area ─────────────────────────────────────────────────────────── */
 .message {
   min-height: 1.4em;
   font-size: var(--text-sm);
@@ -388,7 +366,6 @@ button:active { transform: scale(0.97); }
 .message-ok    { color: var(--color-on); }
 .message-error { color: var(--color-recording); }
 
-/* ── Mobile adjustments ─────────────────────────────────────────────────── */
 @media (max-width: 480px) {
   .container { padding: var(--space-4) var(--space-3); }
 
