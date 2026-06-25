@@ -3,8 +3,8 @@ import json
 from pathlib import Path
 
 import numpy as np
-import whisper
 
+from .queues import transcription_queue, merge_queue, upload_queue
 
 SAMPLE_RATE = 48000
 CHANNELS = 2
@@ -21,24 +21,34 @@ class StreamingTranscriber(threading.Thread):
         self.mq = merge_queue
         self.uq = upload_queue
         self.session_dir = Path(session_dir) if session_dir else None
-        self.model = whisper.load_model("tiny")
         self._full_text = ""
+        self.model = None
 
     def set_session_dir(self, session_dir):
         self.session_dir = Path(session_dir)
 
+    def _load_model(self):
+        if self.model is not None:
+            return self.model
+        import os
+        os.environ.setdefault("TORCH_LOGS", "")
+        import whisper
+        self.model = whisper.load_model("tiny")
+        return self.model
+
     def run(self):
-        while self.session_dir is None:
-            if self.tq.empty():
-                continue
+        buffer = np.array([], dtype=np.int16)
+        session_dir = self.session_dir
+
+        while session_dir is None:
             try:
-                peek = self.tq.get(timeout=0.5)
-                self.tq.put(peek)
+                session_dir = self.session_dir
+                if session_dir is None:
+                    continue
             except Exception:
                 continue
 
-        buffer = np.array([], dtype=np.int16)
-        transcript_path = self.session_dir / "transcript.txt"
+        transcript_path = session_dir / "transcript.txt"
         transcript_path.parent.mkdir(parents=True, exist_ok=True)
         transcript_path.write_text("", encoding="utf-8")
 
@@ -59,23 +69,24 @@ class StreamingTranscriber(threading.Thread):
                 self._process_window(buffer[:WINDOW_FRAMES * CHANNELS], transcript_path)
                 buffer = buffer[OVERLAP_FRAMES * CHANNELS:]
 
-        session_json = self.session_dir / "session.json"
+        session_json = session_dir / "session.json"
         if session_json.exists():
             self._update_session_json(session_json, "completed")
         else:
             meta = {"transcript_status": "completed", "transcript_file": "transcript.txt"}
             session_json.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
-        self.uq.put({"session_id": self.session_dir.name, "file": str(transcript_path)})
-        self.uq.put({"session_id": self.session_dir.name, "file": str(session_json)})
-        self.mq.put({"session_dir": str(self.session_dir)})
+        self.uq.put({"session_id": session_dir.name, "file": str(transcript_path)})
+        self.uq.put({"session_id": session_dir.name, "file": str(session_json)})
+        self.mq.put({"session_dir": str(session_dir)})
 
     def _process_window(self, pcm, transcript_path):
+        model = self._load_model()
         audio_f32 = pcm.astype(np.float32) / 32768.0
         if CHANNELS == 2:
             audio_f32 = audio_f32.reshape(-1, 2).mean(axis=1)
 
-        result = self.model.transcribe(
+        result = model.transcribe(
             audio_f32,
             language="en",
             initial_prompt=self._full_text[-200:] if self._full_text else None

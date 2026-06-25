@@ -3,13 +3,15 @@ import time
 import wave
 import threading
 import cv2
-import numpy as np
-from pathlib import Path
 from datetime import datetime, timezone
 
 from .queues import (
-    event_queue, audio_frame_queue, upload_queue,
-    transcription_queue, START_RECORDING, STOP_RECORDING
+    event_queue,
+    audio_frame_queue,
+    upload_queue,
+    transcription_queue,
+    START_RECORDING,
+    STOP_RECORDING,
 )
 from .session import create_session, write_session_json
 
@@ -36,13 +38,18 @@ class RecorderManagerWorker:
             except Exception:
                 continue
 
-            if ev["event"] == START_RECORDING:
+            ev_name = ev.get("event") if isinstance(ev, dict) else None
+            if ev_name == START_RECORDING:
                 self._record_session()
 
         print("[recorder_manager] stopped")
 
     def _record_session(self):
         session_id, session_dir = create_session()
+
+        if self.transcriber is not None:
+            self.transcriber.session_dir = session_dir
+
         video_path = session_dir / "video.mp4"
         audio_path = session_dir / "audio.wav"
         session_json_path = session_dir / "session.json"
@@ -84,7 +91,8 @@ class RecorderManagerWorker:
 
             try:
                 ev = event_queue.get_nowait()
-                if ev["event"] == STOP_RECORDING:
+                ev_name = ev.get("event") if isinstance(ev, dict) else None
+                if ev_name == STOP_RECORDING:
                     break
             except Exception:
                 pass
@@ -99,6 +107,8 @@ class RecorderManagerWorker:
 
         meta = {
             "session_id": session_id,
+            "start_time": start_time,
+            "end_time": end_time,
             "video_file": "video.mp4",
             "audio_file": "audio.wav",
             "transcript_file": "transcript.txt",
@@ -112,6 +122,19 @@ class RecorderManagerWorker:
         upload_queue.put({"session_id": session_id, "file": str(audio_path)})
         upload_queue.put({"session_id": session_id, "file": str(session_json_path)})
 
-        transcription_queue.put(None)
+        def _safe_put(q, item):
+            try:
+                q.put_nowait(item)
+            except Exception:
+                try:
+                    q.get_nowait()
+                except Exception:
+                    pass
+                try:
+                    q.put_nowait(item)
+                except Exception:
+                    pass
+
+        _safe_put(transcription_queue, None)
 
         print(f"[recorder_manager] session finalized → {session_id}")
