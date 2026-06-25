@@ -9,23 +9,24 @@ from datetime import datetime, timezone
 
 from .queues import (
     event_queue, audio_frame_queue, upload_queue,
-    START_RECORDING, STOP_RECORDING
+    transcription_queue, START_RECORDING, STOP_RECORDING
 )
 from .session import create_session, write_session_json
 
-FRAME_W  = 640
-FRAME_H  = 480
-FPS      = 20.0
-RATE     = 48000
+
+FRAME_W = 640
+FRAME_H = 480
+FPS = 20.0
+RATE = 48000
 CHANNELS = 2
 
 
 class RecorderManagerWorker:
-    def __init__(self, stop_event, video_frame_queue_ref, transcriber_ref):
-        self.stop_event      = stop_event
-        self.vfq             = video_frame_queue_ref
-        self.transcriber     = transcriber_ref
-        self.recording_flag  = threading.Event()  # shared with TranscriberWorker
+    def __init__(self, stop_event, video_frame_queue_ref, recording_flag=None):
+        self.stop_event = stop_event
+        self.vfq = video_frame_queue_ref
+        self.recording_flag = recording_flag or threading.Event()
+        self.transcriber = None
 
     def run(self):
         print("[recorder_manager] started")
@@ -44,12 +45,13 @@ class RecorderManagerWorker:
         session_id, session_dir = create_session()
         video_path = session_dir / "video.mp4"
         audio_path = session_dir / "audio.wav"
+        session_json_path = session_dir / "session.json"
 
         print(f"[recorder_manager] session started → {session_id}")
         start_time = datetime.now(timezone.utc).isoformat()
 
-        fourcc  = cv2.VideoWriter_fourcc(*"mp4v")
-        writer  = cv2.VideoWriter(str(video_path), fourcc, FPS, (FRAME_W, FRAME_H))
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        writer = cv2.VideoWriter(str(video_path), fourcc, FPS, (FRAME_W, FRAME_H))
         wav_out = wave.open(str(audio_path), "wb")
         wav_out.setnchannels(CHANNELS)
         wav_out.setsampwidth(2)
@@ -57,17 +59,13 @@ class RecorderManagerWorker:
 
         self.recording_flag.set()
 
-        # drain any stale audio
         while not audio_frame_queue.empty():
             try:
                 audio_frame_queue.get_nowait()
             except Exception:
                 break
 
-        audio_buffer = []
-
         while not self.stop_event.is_set():
-            # write video frames
             while not self.vfq.empty():
                 try:
                     item = self.vfq.get_nowait()
@@ -75,17 +73,15 @@ class RecorderManagerWorker:
                 except Exception:
                     break
 
-            # write audio chunks to wav
             while not audio_frame_queue.empty():
                 try:
                     item = audio_frame_queue.get_nowait()
-                    raw  = item.get("raw")
+                    raw = item.get("raw")
                     if raw:
                         wav_out.writeframes(raw)
                 except Exception:
                     break
 
-            # check for stop event
             try:
                 ev = event_queue.get_nowait()
                 if ev["event"] == STOP_RECORDING:
@@ -101,23 +97,21 @@ class RecorderManagerWorker:
         writer.release()
         wav_out.close()
 
-        # get transcript from transcriber
-        transcript_path = self.transcriber.finalize(session_dir, session_id)
-
-        # write session.json
         meta = {
-            "session_id":        session_id,
-            "start_time":        start_time,
-            "end_time":          end_time,
-            "video_file":        "video.mp4",
-            "audio_file":        "audio.wav",
-            "transcript_file":   "transcript.txt",
-            "transcript_status": "completed",
+            "session_id": session_id,
+            "video_file": "video.mp4",
+            "audio_file": "audio.wav",
+            "transcript_file": "transcript.txt",
+            "merged_video_file": "merged_video.mp4",
+            "transcript_status": "pending",
+            "merge_status": "pending",
         }
-        session_json_path = write_session_json(session_dir, meta)
+        write_session_json(session_dir, meta)
 
-        # push everything to upload_queue
-        for path in [str(video_path), str(audio_path), str(session_json_path)]:
-            upload_queue.put({"path": path, "session_id": session_id})
+        upload_queue.put({"session_id": session_id, "file": str(video_path)})
+        upload_queue.put({"session_id": session_id, "file": str(audio_path)})
+        upload_queue.put({"session_id": session_id, "file": str(session_json_path)})
+
+        transcription_queue.put(None)
 
         print(f"[recorder_manager] session finalized → {session_id}")
