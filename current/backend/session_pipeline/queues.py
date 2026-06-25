@@ -1,12 +1,13 @@
-import queue
-from session_pipeline.config import (
-    VIDEO_QUEUE_SIZE,
-    AUDIO_QUEUE_SIZE,
-    TRANSCRIPTION_QUEUE_SIZE,
-    UPLOAD_QUEUE_SIZE,
-)
+from queue import Queue
+import threading
 
-video_frame_queue = queue.Queue(maxsize=VIDEO_QUEUE_SIZE)
-audio_frame_queue = queue.Queue(maxsize=AUDIO_QUEUE_SIZE)
-transcription_queue = queue.Queue(maxsize=TRANSCRIPTION_QUEUE_SIZE)
-upload_queue = queue.Queue(maxsize=UPLOAD_QUEUE_SIZE)
+START_RECORDING = "START_RECORDING"
+STOP_RECORDING  = "STOP_RECORDING"
+
+video_frame_queue  = Queue(maxsize=120)
+audio_frame_queue  = Queue(maxsize=500)
+event_queue        = Queue(maxsize=20)
+upload_queue       = Queue(maxsize=100)
+
+transcription_lock   = threading.Lock()
+transcription_buffer = []

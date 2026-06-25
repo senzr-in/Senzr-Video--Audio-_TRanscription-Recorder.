@@ -1,70 +1,45 @@
-import queue
-import threading
 import time
 from pathlib import Path
+from .queues import upload_queue
 
-import boto3
-from botocore.exceptions import BotoCoreError, ClientError
-
-from session_pipeline.config import (
-    AWS_ACCESS_KEY, AWS_SECRET_KEY, AWS_REGION,
-    S3_BUCKET, UPLOAD_MAX_RETRIES, UPLOAD_RETRY_DELAY,
-)
-from session_pipeline.queues import upload_queue
+S3_BUCKET = "demoapp-static-files"
+S3_PREFIX = "edge-gateway"
+MAX_RETRIES = 3
 
 
-def _build_s3_key(session_id: str, file_path: str) -> str:
-    filename = Path(file_path).name
-    return f"sessions/{session_id}/{filename}"
+def _upload_file(path: str, session_id: str):
+    try:
+        import boto3
+        s3   = boto3.client("s3")
+        key  = f"{S3_PREFIX}/{session_id}/{Path(path).name}"
+        s3.upload_file(path, S3_BUCKET, key)
+        print(f"[uploader] ✓ {Path(path).name} → s3://{S3_BUCKET}/{key}")
+    except Exception as e:
+        raise RuntimeError(f"upload failed: {e}")
 
 
-def _upload_file(s3_client, session_id: str, file_path: str) -> bool:
-    key = _build_s3_key(session_id, file_path)
-    for attempt in range(1, UPLOAD_MAX_RETRIES + 1):
-        try:
-            s3_client.upload_file(file_path, S3_BUCKET, key)
-            print(f"[Uploader] Uploaded s3://{S3_BUCKET}/{key}")
-            return True
-        except (BotoCoreError, ClientError) as e:
-            print(f"[Uploader] Attempt {attempt}/{UPLOAD_MAX_RETRIES} failed for {file_path}: {e}")
-            if attempt < UPLOAD_MAX_RETRIES:
-                time.sleep(UPLOAD_RETRY_DELAY)
-    print(f"[Uploader] All retries exhausted for {file_path}")
-    return False
+class UploaderWorker:
+    def __init__(self, stop_event):
+        self.stop_event = stop_event
 
-
-class S3Uploader:
-    def run(self, stop_event: threading.Event):
-        print("[Uploader] Starting")
-        s3 = boto3.client(
-            "s3",
-            region_name=AWS_REGION,
-            aws_access_key_id=AWS_ACCESS_KEY,
-            aws_secret_access_key=AWS_SECRET_KEY,
-        )
-
-        while not stop_event.is_set():
+    def run(self):
+        print("[uploader] started")
+        while not self.stop_event.is_set():
             try:
-                job = upload_queue.get(timeout=1.0)
-            except queue.Empty:
+                job = upload_queue.get(timeout=0.5)
+            except Exception:
                 continue
 
-            session_id = job["session_id"]
-            file_path = job["file_path"]
+            path       = job["path"]
+            session_id = job.get("session_id", "unknown")
 
-            if not Path(file_path).exists():
-                print(f"[Uploader] File not found, skipping: {file_path}")
-                continue
+            for attempt in range(1, MAX_RETRIES + 1):
+                try:
+                    _upload_file(path, session_id)
+                    break
+                except Exception as e:
+                    print(f"[uploader] attempt {attempt}/{MAX_RETRIES} failed: {e}")
+                    if attempt < MAX_RETRIES:
+                        time.sleep(2 ** attempt)
 
-            _upload_file(s3, session_id, file_path)
-
-        # Drain remaining on shutdown
-        print("[Uploader] Draining remaining upload queue on shutdown...")
-        while True:
-            try:
-                job = upload_queue.get_nowait()
-                _upload_file(s3, job["session_id"], job["file_path"])
-            except queue.Empty:
-                break
-
-        print("[Uploader] Stopped")
+        print("[uploader] stopped")

@@ -1,37 +1,32 @@
-from datetime import datetime
 from pathlib import Path
-
-
-RECORDINGS_ROOT = Path("/opt/edge-gateway/current/recordings")
+from datetime import datetime
+from .config import RECORDINGS_DIR
+from .models import SessionInfo
 
 
 class SessionManager:
-
-    def __init__(self):
-        self.session_id = None
-        self.session_dir = None
+    def __init__(self, base_dir: Path = RECORDINGS_DIR):
+        self.base_dir = Path(base_dir)
+        self.session: SessionInfo | None = None
 
     def create_session(self):
-
-        self.session_id = datetime.now().strftime("%y%m%d_%H%M%S")
-
-        self.session_dir = RECORDINGS_ROOT / self.session_id
-
-        self.session_dir.mkdir(
-            parents=True,
-            exist_ok=True
-        )
-
-        return self.session_id, self.session_dir
+        session_id = datetime.utcnow().strftime("session_%Y%m%d_%H%M%S")
+        session_dir = self.base_dir / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+        self.session = SessionInfo(session_id=session_id, session_dir=session_dir)
+        return self.session, session_dir
 
     def get_video_path(self):
-
-        return self.session_dir / "video.mp4"
+        if not self.session:
+            raise RuntimeError("Session not created")
+        return self.session.session_dir / self.session.video_file
 
     def get_audio_path(self):
+        if not self.session:
+            raise RuntimeError("Session not created")
+        return self.session.session_dir / self.session.audio_file
 
-        return self.session_dir / "audio.wav"
-
-    def get_transcript_path(self):
-
-        return self.session_dir / "transcript.json"
+    def get_session_json_path(self):
+        if not self.session:
+            raise RuntimeError("Session not created")
+        return self.session.session_dir / "session.json"

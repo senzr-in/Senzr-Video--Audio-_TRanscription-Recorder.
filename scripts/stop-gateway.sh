@@ -1,20 +1,16 @@
-#!/bin/bash
-# Edge Gateway Framework - Shutdown Script
-# Safely stops nginx, backend, dnsmasq, and hostapd.
+#!/usr/bin/env bash
+set -euo pipefail
 
-set -e
-
-echo "1/4 Stopping nginx..."
+echo "[stop] nginx"
 systemctl stop nginx || true
 
-echo "2/4 Stopping edge-gateway (FastAPI backend)..."
+echo "[stop] edge-gateway"
 systemctl stop edge-gateway || true
 
-echo "3/4 Stopping dnsmasq (DHCP/DNS)..."
+echo "[stop] dnsmasq"
 systemctl stop dnsmasq || true
 
-echo "4/4 Stopping hostapd (WiFi AP)..."
+echo "[stop] hostapd"
 systemctl stop hostapd || true
 
-echo
-echo "Stack is DOWN."
+echo "[stop] stack is down"

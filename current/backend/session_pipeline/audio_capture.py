@@ -1,74 +1,56 @@
-import os
-import signal
 import subprocess
-import threading
-import queue
 import time
-from datetime import datetime
+import threading
+import wave
+import numpy as np
 
-from session_pipeline.config import (
-    AUDIO_DEVICE, AUDIO_CHANNELS, AUDIO_RATE, AUDIO_FORMAT,
-)
-from session_pipeline.queues import audio_frame_queue
+from .queues import audio_frame_queue
 
-CHUNK_DURATION_MS = 100
-BYTES_PER_SAMPLE = 2
-CHUNK_SIZE = int(AUDIO_RATE * AUDIO_CHANNELS * BYTES_PER_SAMPLE * CHUNK_DURATION_MS / 1000)
+ALSA_DEVICE   = "plughw:2,0"
+CHANNELS      = 2
+RATE          = 48000
+FORMAT        = "S16_LE"
+CHUNK_SECS    = 0.5   # emit 0.5s chunks for near-real-time transcription
 
 
-class AudioCapture:
-    def __init__(self):
-        self._proc = None
+class AudioCaptureWorker:
+    def __init__(self, stop_event):
+        self.stop_event = stop_event
 
-    def run(self, stop_event: threading.Event):
-        print("[AudioCapture] Starting")
-
+    def run(self):
+        chunk_frames = int(RATE * CHUNK_SECS)
         cmd = [
             "arecord",
-            "-D", AUDIO_DEVICE,
-            "-c", str(AUDIO_CHANNELS),
-            "-r", str(AUDIO_RATE),
-            "-f", AUDIO_FORMAT,
+            "-D", ALSA_DEVICE,
+            "-c", str(CHANNELS),
+            "-r", str(RATE),
+            "-f", FORMAT,
             "-t", "raw",
-            "--buffer-size=8192",
-            "-",
+            "--quiet",
         ]
-
-        self._proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-
+        print("[audio_capture] started")
         try:
-            while not stop_event.is_set():
-                chunk = self._proc.stdout.read(CHUNK_SIZE)
-                if not chunk:
-                    time.sleep(0.01)
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            bytes_per_frame = CHANNELS * 2  # S16_LE = 2 bytes per sample
+            chunk_bytes = chunk_frames * bytes_per_frame
+
+            while not self.stop_event.is_set():
+                raw = proc.stdout.read(chunk_bytes)
+                if not raw:
+                    time.sleep(0.05)
                     continue
-
-                item = {
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "audio_chunk": chunk,
-                    "sample_rate": AUDIO_RATE,
-                    "channels": AUDIO_CHANNELS,
-                    "format": AUDIO_FORMAT,
-                }
-
+                samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+                item = {"timestamp": time.time(), "audio_chunk": samples, "raw": raw}
                 try:
                     audio_frame_queue.put_nowait(item)
-                except queue.Full:
-                    try:
-                        audio_frame_queue.get_nowait()
-                    except queue.Empty:
-                        pass
-                    audio_frame_queue.put_nowait(item)
-
-        finally:
-            if self._proc and self._proc.poll() is None:
-                try:
-                    os.killpg(os.getpgid(self._proc.pid), signal.SIGTERM)
-                except ProcessLookupError:
+                except Exception:
                     pass
-            print("[AudioCapture] arecord stopped")
+
+        except Exception as e:
+            print(f"[audio_capture] ERROR: {e}")
+        finally:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+        print("[audio_capture] stopped")
