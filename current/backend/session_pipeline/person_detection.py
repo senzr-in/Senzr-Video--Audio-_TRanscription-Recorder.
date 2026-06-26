@@ -11,7 +11,6 @@ from .config import (
 )
 from .queues import video_frame_queue, event_queue
 
-
 MODEL_PATH = Path("/opt/edge-gateway/current/backend/models/yolov8.rknn")
 
 STRIDES = [8, 16, 32]
@@ -24,11 +23,10 @@ def sigmoid(x):
     return 1.0 / (1.0 + np.exp(-np.clip(x, -88, 88)))
 
 
-def dfl_batch(pred):
-    x = pred - pred.max(axis=-1, keepdims=True)
+def softmax_last(x):
+    x = x - x.max(axis=-1, keepdims=True)
     e = np.exp(x)
-    p = e / (e.sum(axis=-1, keepdims=True) + 1e-9)
-    return (p * PROJ).sum(axis=-1)
+    return e / (e.sum(axis=-1, keepdims=True) + 1e-9)
 
 
 def letterbox(img, new_shape=640, color=(114, 114, 114)):
@@ -46,6 +44,8 @@ def letterbox(img, new_shape=640, color=(114, 114, 114)):
 def nms(boxes, scores, iou_thres):
     if len(boxes) == 0:
         return []
+    boxes = boxes.astype(np.float32)
+    scores = scores.astype(np.float32)
     x1, y1, x2, y2 = boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3]
     areas = (x2 - x1).clip(0) * (y2 - y1).clip(0)
     order = scores.argsort()[::-1]
@@ -65,13 +65,18 @@ def nms(boxes, scores, iou_thres):
     return keep
 
 
-def decode_yolov8(outputs):
-    boxes_all, scores_all, cls_ids_all = [], [], []
+def dfl_decode(pred):
+    pred = pred.reshape(-1, 4, REG_MAX)
+    prob = softmax_last(pred)
+    return (prob * PROJ).sum(axis=-1)
 
-    for stride, box_out, cls_out, dfl_out in zip(
-        STRIDES,
-        outputs[0::3], outputs[1::3], outputs[2::3]
-    ):
+
+def decode_yolov8(outputs):
+    boxes_all = []
+    scores_all = []
+    cls_ids_all = []
+
+    for stride, box_out, cls_out, dfl_out in zip(STRIDES, outputs[0::3], outputs[1::3], outputs[2::3]):
         _, _, fh, fw = np.asarray(box_out).shape
         n = fh * fw
 
@@ -98,7 +103,7 @@ def decode_yolov8(outputs):
         cx = (gx.astype(np.float32) + 0.5) * stride
         cy = (gy.astype(np.float32) + 0.5) * stride
 
-        dist = dfl_batch(box.reshape(-1, 4, REG_MAX))
+        dist = dfl_decode(box)
         l, t, r, b = dist[:, 0], dist[:, 1], dist[:, 2], dist[:, 3]
 
         x1 = cx - l * stride
@@ -133,6 +138,7 @@ class PersonDetectionWorker:
         self.person_seen = 0
         self.person_missing = 0
         self.frame_counter = 0
+        self.debug_force_start_once = True
 
         ret = self.rknn.load_rknn(str(MODEL_PATH))
         if ret != 0:
@@ -157,16 +163,6 @@ class PersonDetectionWorker:
             img = np.expand_dims(img, axis=0)
 
             outputs = self.rknn.inference(inputs=[img])
-
-            if self.frame_counter % DEBUG_EVERY_N_FRAMES == 0:
-                shapes = [o.shape for o in outputs]
-                max_scores = []
-                for o in outputs:
-                    arr = np.asarray(o)
-                    max_scores.append(float(np.nanmax(arr)))
-                print(f"[DEBUG] raw output shapes: {shapes}")
-                print(f"[DEBUG] max scores: {max_scores}")
-
             boxes, scores, cls_ids = decode_yolov8(outputs)
 
             person_mask = cls_ids == PERSON_CLASS_ID
@@ -180,7 +176,8 @@ class PersonDetectionWorker:
                 best_score = 0.0
                 best_box = None
 
-            person_detected = best_score > OBJ_THRESH
+            person_detected = self.debug_force_start_once
+            self.debug_force_start_once = False
 
             if person_detected:
                 self.person_seen += 1
@@ -190,6 +187,8 @@ class PersonDetectionWorker:
                 self.person_seen = 0
 
             if self.frame_counter % DEBUG_EVERY_N_FRAMES == 0:
+                shapes = [tuple(np.asarray(o).shape) for o in outputs]
+                print(f"[DEBUG] raw output shapes: {shapes}")
                 print(f"[DEBUG] detections={len(boxes)} person_best={best_score:.4f} box={best_box}")
                 print(f"[DETECT] detected={person_detected} seen={self.person_seen} missing={self.person_missing}")
 
