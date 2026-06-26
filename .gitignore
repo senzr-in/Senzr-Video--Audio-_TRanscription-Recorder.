@@ -38,3 +38,8 @@ __pycache__/
 *.pyc
 local_storage/*
 !local_storage/.gitkeep
+
+# RKNN SDK
+librknnrt.so
+rknn-toolkit2-2.3.2/
+v2.3.2.zip
