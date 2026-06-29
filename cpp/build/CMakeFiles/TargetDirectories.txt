@@ -1,0 +1,3 @@
+/opt/edge-gateway/cpp/build/CMakeFiles/edge-gateway-backend.dir
+/opt/edge-gateway/cpp/build/CMakeFiles/edit_cache.dir
+/opt/edge-gateway/cpp/build/CMakeFiles/rebuild_cache.dir
