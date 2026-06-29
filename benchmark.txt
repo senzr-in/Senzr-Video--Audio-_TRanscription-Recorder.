@@ -1,0 +1,84 @@
+============================================================
+  EDGE GATEWAY BENCHMARK REPORT
+  Generated : 2026-06-29 16:34:52
+  Device    : Orange Pi 5 Max  |  RK3588 / RKNPU v2
+============================================================
+
+============================================================
+                      SESSION IDENTITY
+============================================================
+  Session ID     : session_20260629_083237
+  Session Path   : /opt/edge-gateway/recordings/session_20260629_083237
+  Scan Status    : OK
+  Artifacts Found:
+    [✓] video.mp4  (30,864,624 bytes)
+    [✓] audio.wav  (11,136,044 bytes)
+    [✓] session.json  (590 bytes)
+    [✓] transcript.txt  (20 bytes)
+
+============================================================
+                    CAMERA FPS BENCHMARK
+============================================================
+  Status               : OK
+  Configured FPS cap   : 30 fps
+  Driver-reported FPS  : 30.0 fps
+  Live capture FPS     : 28.0 fps  (281 frames / 10.04s)
+  Pipeline FPS (capped): 28.0 fps
+  Frame drop rate      : 6.67 %
+  Frames dropped (err) : 0
+  Recorded video FPS   : 20.0 fps  (from session artifact)
+  Total frames in clip : 1217
+  FPS delta (live vs recorded): 8.0 fps
+
+============================================================
+                AUDIO SAMPLE RATE BENCHMARK
+============================================================
+  Status                  : OK
+  Configured sample rate  : 48,000 Hz
+  Configured channels     : 2
+  Probed mic rate         : 48,000 Hz
+  Probed mic channels     : 2
+  Probe clip duration     : 5.0 sec
+  Rate match              : YES ✓
+  Channel match           : YES ✓
+  Session audio rate      : 48,000 Hz  (from session artifact)
+  Session audio channels  : 2
+  Session audio duration  : 58.0 sec
+  Rate delta (probe vs session): 0 Hz
+
+============================================================
+              TRANSCRIPTION ACCURACY BENCHMARK
+============================================================
+  Status              : OK
+  Model size          : base
+  Compute type        : int8
+  Sentences tested    : 3
+  Avg Word Error Rate : 0.2444  (lower is better; 0.0 = perfect)
+  Avg Precision       : 0.7685  (predicted words that are correct)
+  Avg Recall          : 0.7463  (reference words that were found)
+
+  Per-Sentence Results:
+  --------------------------------------------------------
+  [1] Reference : the quick brown fox jumps over the lazy dog
+      Hypothesis: the quick brown fox jump over the lazy dog.
+      WER=0.2222  Precision=0.7500  Recall=0.7500
+  [2] Reference : edge gateway system is running on orange pi five max
+      Hypothesis: and gateway system is running on orange i5 max.
+      WER=0.4000  Precision=0.6667  Recall=0.6000
+  [3] Reference : person detection is active and sessions are being recorded
+      Hypothesis: Person detection is active and sessions are being recorded.
+      WER=0.1111  Precision=0.8889  Recall=0.8889
+
+============================================================
+                 SESSION TRANSCRIPT PREVIEW
+============================================================
+  (first 500 chars from most recent session)
+
+  [no speech detected]
+
+============================================================
+  END OF BENCHMARK REPORT
+  This file is located at: /opt/edge-gateway/benchmark.txt
+  Match the Session ID above with your S3 bucket folder
+  to verify video, audio, and transcript artifacts.
+============================================================

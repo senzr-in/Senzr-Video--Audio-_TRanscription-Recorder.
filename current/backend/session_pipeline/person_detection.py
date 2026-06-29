@@ -9,7 +9,7 @@ from .config import (
     OBJ_THRESH, EARLY_OBJ_THRESH, NMS_THRESH,
     START_CONFIRM_FRAMES, STOP_CONFIRM_FRAMES, DEBUG_EVERY_N_FRAMES,
 )
-from .queues import video_frame_queue, event_queue
+from .queues import detect_frame_queue, event_queue, START_RECORDING, STOP_RECORDING
 
 
 MODEL_PATH = Path("/opt/edge-gateway/current/backend/models/yolov8.rknn")
@@ -142,9 +142,11 @@ class PersonDetectionWorker:
             raise RuntimeError(f"Failed to init RKNN runtime: {ret}")
 
     def run(self):
+        print("[person_detection] started")
+
         while not self.stop_event.is_set():
             try:
-                item = video_frame_queue.get(timeout=0.2)
+                item = detect_frame_queue.get(timeout=0.2)
             except Exception:
                 continue
 
@@ -180,25 +182,38 @@ class PersonDetectionWorker:
                 best_score = 0.0
                 best_box = None
 
+            print("[person_detection] FORCED PERSON MODE ACTIVE")
             person_detected = best_score > OBJ_THRESH
-
-            if person_detected:
-                self.person_seen += 1
-                self.person_missing = 0
-            else:
-                self.person_missing += 1
-                self.person_seen = 0
+            self.person_seen = START_CONFIRM_FRAMES
+            self.person_missing = 0
 
             if self.frame_counter % DEBUG_EVERY_N_FRAMES == 0:
                 print(f"[DEBUG] detections={len(boxes)} person_best={best_score:.4f} box={best_box}")
                 print(f"[DETECT] detected={person_detected} seen={self.person_seen} missing={self.person_missing}")
 
+            if self.frame_counter % 30 == 0:
+                print(
+                    f"[person_detection] heartbeat frame={self.frame_counter} "
+                    f"best_score={best_score:.4f} seen={self.person_seen} missing={self.person_missing}"
+                )
+
             if self.person_seen >= START_CONFIRM_FRAMES:
-                event_queue.put_nowait({"event": "START_RECORDING", "timestamp": ts})
+                print(
+                    f"[person_detection] START_RECORDING ts={ts} "
+                    f"seen={self.person_seen} best_score={best_score:.4f}"
+                )
+                try:
+                    event_queue.put_nowait({"event": START_RECORDING, "timestamp": ts})
+                except Exception as e:
+                    print(f"[person_detection] failed to queue START_RECORDING: {e}")
                 self.person_seen = 0
 
-            if self.person_missing >= STOP_CONFIRM_FRAMES:
-                event_queue.put_nowait({"event": "STOP_RECORDING", "timestamp": ts})
+            if False and self.person_missing >= STOP_CONFIRM_FRAMES:
+                print(f"[person_detection] STOP_RECORDING ts={ts} missing={self.person_missing}")
+                try:
+                    event_queue.put_nowait({"event": STOP_RECORDING, "timestamp": ts})
+                except Exception as e:
+                    print(f"[person_detection] failed to queue STOP_RECORDING: {e}")
                 self.person_missing = 0
 
         self.rknn.release()

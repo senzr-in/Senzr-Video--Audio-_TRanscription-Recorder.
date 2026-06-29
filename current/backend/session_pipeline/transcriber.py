@@ -3,7 +3,6 @@ import json
 from pathlib import Path
 
 import numpy as np
-from faster_whisper import WhisperModel
 
 from .queues import transcription_queue, upload_queue
 
@@ -31,6 +30,8 @@ class StreamingTranscriber(threading.Thread):
     def _load_model(self):
         if self.model is not None:
             return self.model
+
+        from faster_whisper import WhisperModel
 
         self.model = WhisperModel(
             "tiny",
@@ -73,6 +74,13 @@ class StreamingTranscriber(threading.Thread):
                 self._process_window(buffer[:WINDOW_FRAMES * CHANNELS], transcript_path)
                 buffer = buffer[OVERLAP_FRAMES * CHANNELS:]
 
+        if not transcript_path.exists():
+            transcript_path.write_text("[no speech detected]", encoding="utf-8")
+        else:
+            current = transcript_path.read_text(encoding="utf-8").strip()
+            if not current:
+                transcript_path.write_text("[no speech detected]", encoding="utf-8")
+
         session_json = session_dir / "session.json"
         if session_json.exists():
             self._update_session_json(session_json, "completed")
@@ -96,14 +104,18 @@ class StreamingTranscriber(threading.Thread):
         if CHANNELS == 2:
             audio_f32 = audio_f32.reshape(-1, 2).mean(axis=1)
 
-        segments, info = model.transcribe(
-            audio_f32,
-            language="en",
-            initial_prompt=self._full_text[-200:] if self._full_text else None,
-            vad_filter=False
-        )
+        try:
+            segments, info = model.transcribe(
+                audio_f32,
+                language="en",
+                initial_prompt=self._full_text[-200:] if self._full_text else None,
+                vad_filter=False
+            )
+            segments = list(segments)
+            new_text = " ".join(segment.text for segment in segments).strip()
+        except Exception as exc:
+            new_text = f"[transcription failed: {exc}]"
 
-        new_text = " ".join(segment.text for segment in segments).strip()
         deduplicated = self._deduplicate(self._full_text, new_text)
         if deduplicated:
             self._full_text = (self._full_text + " " + deduplicated).strip()

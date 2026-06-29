@@ -1,8 +1,9 @@
 import threading
 
 from .queues import (
-    video_frame_queue,
-    audio_frame_queue,
+    detect_frame_queue,
+    record_frame_queue,
+    event_queue,
     upload_queue,
     transcription_queue,
 )
@@ -44,7 +45,8 @@ class SessionPipeline:
         )
         self.recorder = RecorderManagerWorker(
             self._stop_event,
-            video_frame_queue,
+            record_frame_queue,
+            event_queue,
             self._recording_flag
         )
         self.recorder.transcriber = self.transcriber
