@@ -5,7 +5,6 @@ from .queues import (
     audio_frame_queue,
     upload_queue,
     transcription_queue,
-    merge_queue,
 )
 from .video_capture import VideoCaptureWorker
 from .audio_capture import AudioCaptureWorker
