@@ -15,4 +15,3 @@ transcription_buffer = []
 
 # NEW
 transcription_queue = queue.Queue(maxsize=200)
-merge_queue = queue.Queue()

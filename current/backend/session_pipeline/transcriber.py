@@ -3,8 +3,10 @@ import json
 from pathlib import Path
 
 import numpy as np
+from faster_whisper import WhisperModel
 
-from .queues import transcription_queue, merge_queue, upload_queue
+from .queues import transcription_queue, upload_queue
+
 
 SAMPLE_RATE = 48000
 CHANNELS = 2
@@ -15,10 +17,9 @@ OVERLAP_FRAMES = SAMPLE_RATE * OVERLAP_SEC
 
 
 class StreamingTranscriber(threading.Thread):
-    def __init__(self, transcription_queue, merge_queue, upload_queue, session_dir):
+    def __init__(self, transcription_queue, upload_queue, session_dir):
         super().__init__(daemon=True)
         self.tq = transcription_queue
-        self.mq = merge_queue
         self.uq = upload_queue
         self.session_dir = Path(session_dir) if session_dir else None
         self._full_text = ""
@@ -30,10 +31,13 @@ class StreamingTranscriber(threading.Thread):
     def _load_model(self):
         if self.model is not None:
             return self.model
-        import os
-        os.environ.setdefault("TORCH_LOGS", "")
-        import whisper
-        self.model = whisper.load_model("tiny")
+
+        self.model = WhisperModel(
+            "tiny",
+            device="cpu",
+            compute_type="int8"
+        )
+
         return self.model
 
     def run(self):
@@ -76,9 +80,15 @@ class StreamingTranscriber(threading.Thread):
             meta = {"transcript_status": "completed", "transcript_file": "transcript.txt"}
             session_json.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
-        self.uq.put({"session_id": session_dir.name, "file": str(transcript_path)})
-        self.uq.put({"session_id": session_dir.name, "file": str(session_json)})
-        self.mq.put({"session_dir": str(session_dir)})
+        self.uq.put({
+            "session_id": session_dir.name,
+            "file": str(transcript_path)
+        })
+
+        self.uq.put({
+            "session_id": session_dir.name,
+            "file": str(session_json)
+        })
 
     def _process_window(self, pcm, transcript_path):
         model = self._load_model()
@@ -86,12 +96,14 @@ class StreamingTranscriber(threading.Thread):
         if CHANNELS == 2:
             audio_f32 = audio_f32.reshape(-1, 2).mean(axis=1)
 
-        result = model.transcribe(
+        segments, info = model.transcribe(
             audio_f32,
             language="en",
-            initial_prompt=self._full_text[-200:] if self._full_text else None
+            initial_prompt=self._full_text[-200:] if self._full_text else None,
+            vad_filter=False
         )
-        new_text = result.get("text", "").strip()
+
+        new_text = " ".join(segment.text for segment in segments).strip()
         deduplicated = self._deduplicate(self._full_text, new_text)
         if deduplicated:
             self._full_text = (self._full_text + " " + deduplicated).strip()

@@ -23,3 +23,5 @@ uvicorn[standard]
 boto3
 paho-mqtt
 python-dotenv
+faster-whisper
+ctranslate2

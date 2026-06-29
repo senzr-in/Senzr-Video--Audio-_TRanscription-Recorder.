@@ -12,7 +12,6 @@ from .audio_capture import AudioCaptureWorker
 from .person_detection import PersonDetectionWorker
 from .recorder_manager import RecorderManagerWorker
 from .transcriber import StreamingTranscriber
-from .merge_worker import MergeWorker
 from .uploader import UploaderWorker
 
 
@@ -28,7 +27,6 @@ class SessionPipeline:
         self.detect_worker = None
         self.recorder = None
         self.transcriber = None
-        self.merger = None
         self.uploader = None
 
     def start(self):
@@ -42,7 +40,6 @@ class SessionPipeline:
         self.detect_worker = PersonDetectionWorker(self._stop_event)
         self.transcriber = StreamingTranscriber(
             transcription_queue,
-            merge_queue,
             upload_queue,
             None,
         )
@@ -53,7 +50,6 @@ class SessionPipeline:
         )
         self.recorder.transcriber = self.transcriber
 
-        self.merger = MergeWorker(merge_queue, upload_queue)
         self.uploader = UploaderWorker(self._stop_event)
 
         workers = [
@@ -62,7 +58,6 @@ class SessionPipeline:
             self.detect_worker,
             self.recorder,
             self.transcriber,
-            self.merger,
             self.uploader,
         ]
 
@@ -81,7 +76,6 @@ class SessionPipeline:
 
         self._stop_event.set()
         transcription_queue.put(None)
-        merge_queue.put(None)
 
         for t in self._threads:
             t.join(timeout=5)
