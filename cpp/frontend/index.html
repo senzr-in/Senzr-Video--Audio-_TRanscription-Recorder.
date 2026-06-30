@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Edge Gateway</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <main class="card">
+    <h1>Edge Gateway</h1>
+
+    <section class="status-grid">
+      <div class="status-item">
+        <div class="label">Config loaded</div>
+        <div class="value" id="config-loaded">-</div>
+      </div>
+
+      <div class="status-item">
+        <div class="label">Camera connected</div>
+        <div class="value" id="camera-connected">-</div>
+      </div>
+
+      <div class="status-item">
+        <div class="label">Hostname</div>
+        <div class="value" id="hostname">-</div>
+      </div>
+
+      <div class="status-item">
+        <div class="label">IP address</div>
+        <div class="value" id="ip-address">-</div>
+      </div>
+    </section>
+
+    <p class="note">Live status is fetched from <code>/api/config</code>.</p>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
+

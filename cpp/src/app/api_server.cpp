@@ -1,6 +1,15 @@
 #include "app/api_server.hpp"
 #include <iostream>
 #include <sstream>
+<<<<<<< HEAD
+=======
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <filesystem>
+>>>>>>> fc6c84e (Half-way cpp conversion)
 
 namespace app {
 
@@ -8,6 +17,7 @@ using json = nlohmann::json;
 
 ApiServer::ApiServer() = default;
 
+<<<<<<< HEAD
 json ApiServer::status_json() const {
     return {
         {"status", "online"},
@@ -28,10 +38,75 @@ json ApiServer::config_json() const {
         {"provisioningenabled", cfg.provisioningenabled},
         {"cameraconnected", cfg.cameraconnected}
     };
+=======
+static std::string get_host_name() {
+    char host[256] = {0};
+    if (gethostname(host, sizeof(host)) == 0 && host[0] != '\0') {
+        return std::string(host);
+    }
+    return "edge-gateway";
+}
+
+static std::string get_lan_ip() {
+    struct ifaddrs* ifaddr = nullptr;
+    if (getifaddrs(&ifaddr) != 0) {
+        return "127.0.0.1";
+    }
+
+    std::string result = "127.0.0.1";
+    for (struct ifaddrs* ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
+        if (!ifa->ifa_addr) continue;
+        if (ifa->ifa_addr->sa_family != AF_INET) continue;
+        if (std::string(ifa->ifa_name) == "lo") continue;
+
+        char ip[INET_ADDRSTRLEN] = {0};
+        auto* sin = reinterpret_cast<struct sockaddr_in*>(ifa->ifa_addr);
+        if (inet_ntop(AF_INET, &sin->sin_addr, ip, sizeof(ip))) {
+            result = ip;
+            break;
+        }
+    }
+
+    freeifaddrs(ifaddr);
+    return result;
+}
+
+static bool has_camera_device() {
+    if (std::filesystem::exists("/dev/video0")) return true;
+    if (std::filesystem::exists("/dev/v4l/by-id")) {
+        for (const auto& entry : std::filesystem::directory_iterator("/dev/v4l/by-id")) {
+            (void)entry;
+            return true;
+        }
+    }
+    return false;
+}
+
+json ApiServer::status_json() const {
+    return {
+        {"status", "online"},
+        {"hostname", get_host_name()},
+        {"ip_address", get_lan_ip()},
+        {"config_loaded", true},
+        {"pipeline_running", pipeline_.is_running()},
+        {"camera_connected", has_camera_device()}
+    };
+}
+
+StatusResponse ApiServer::get_status() const {
+    StatusResponse out;
+    out.status = "online";
+    out.hostname = get_host_name();
+    out.ip_address = get_lan_ip();
+    out.config_loaded = true;
+    out.pipeline_running = pipeline_.is_running();
+    return out;
+>>>>>>> fc6c84e (Half-way cpp conversion)
 }
 
 void ApiServer::register_routes(httplib::Server& server) {
     server.Get("/api/status", [this](const httplib::Request&, httplib::Response& res) {
+<<<<<<< HEAD
         res.set_content(status_json().dump(), "application/json");
     });
 
@@ -70,6 +145,22 @@ void ApiServer::register_routes(httplib::Server& server) {
     server.Get("/api/camera/status", [this](const httplib::Request&, httplib::Response& res) {
         res.set_content(json{{"pipeline_running", pipeline_.is_running()}, {"state", this->camera_status()}}.dump(), "application/json");
     });
+=======
+        res.set_content(status_json().dump(2), "application/json");
+    });
+
+    server.Get("/api/config", [this](const httplib::Request&, httplib::Response& res) {
+        json body = {
+            {"config_loaded", true},
+            {"camera_connected", has_camera_device()},
+            {"hostname", get_host_name()},
+            {"ip_address", get_lan_ip()}
+        };
+        res.set_content(body.dump(2), "application/json");
+    });
+
+    server.set_mount_point("/", "frontend");
+>>>>>>> fc6c84e (Half-way cpp conversion)
 }
 
 int ApiServer::run() {
@@ -85,6 +176,7 @@ int ApiServer::run() {
     return 0;
 }
 
+<<<<<<< HEAD
 StatusResponse ApiServer::get_status() const {
     StatusResponse out;
     out.status = "online";
@@ -120,4 +212,6 @@ std::string ApiServer::camera_status() const {
     return pipeline_.is_running() ? "running" : "stopped";
 }
 
+=======
+>>>>>>> fc6c84e (Half-way cpp conversion)
 }
