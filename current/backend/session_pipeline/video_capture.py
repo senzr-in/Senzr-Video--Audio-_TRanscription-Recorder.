@@ -6,7 +6,7 @@ from .queues import detect_frame_queue, record_frame_queue
 CAMERA_INDEX = 0
 FRAME_W = 640
 FRAME_H = 480
-FPS = 20.0
+FPS = 28.0
 
 
 class VideoCaptureWorker:

@@ -4,6 +4,7 @@ import threading
 from pathlib import Path
 from rknnlite.api import RKNNLite
 
+
 from .config import (
     MODEL_INPUT_SIZE, PERSON_CLASS_ID,
     OBJ_THRESH, EARLY_OBJ_THRESH, NMS_THRESH,
@@ -13,6 +14,7 @@ from .queues import detect_frame_queue, event_queue, START_RECORDING, STOP_RECOR
 
 
 MODEL_PATH = Path("/opt/edge-gateway/current/backend/models/yolov8.rknn")
+
 
 STRIDES = [8, 16, 32]
 REG_MAX = 16
@@ -182,10 +184,14 @@ class PersonDetectionWorker:
                 best_score = 0.0
                 best_box = None
 
-            print("[person_detection] FORCED PERSON MODE ACTIVE")
             person_detected = best_score > OBJ_THRESH
-            self.person_seen = START_CONFIRM_FRAMES
-            self.person_missing = 0
+
+            if person_detected:
+                self.person_seen += 1
+                self.person_missing = 0
+            else:
+                self.person_seen = 0
+                self.person_missing += 1
 
             if self.frame_counter % DEBUG_EVERY_N_FRAMES == 0:
                 print(f"[DEBUG] detections={len(boxes)} person_best={best_score:.4f} box={best_box}")
@@ -208,7 +214,7 @@ class PersonDetectionWorker:
                     print(f"[person_detection] failed to queue START_RECORDING: {e}")
                 self.person_seen = 0
 
-            if False and self.person_missing >= STOP_CONFIRM_FRAMES:
+            if self.person_missing >= STOP_CONFIRM_FRAMES:
                 print(f"[person_detection] STOP_RECORDING ts={ts} missing={self.person_missing}")
                 try:
                     event_queue.put_nowait({"event": STOP_RECORDING, "timestamp": ts})

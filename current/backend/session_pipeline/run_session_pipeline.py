@@ -84,3 +84,13 @@ class SessionPipeline:
         self._threads.clear()
         self.is_running = False
         print("[pipeline] all workers stopped")
+
+
+def main():
+    pipeline = SessionPipeline()
+    pipeline.start()
+    return pipeline
+
+
+if __name__ == "__main__":
+    pipeline = main()

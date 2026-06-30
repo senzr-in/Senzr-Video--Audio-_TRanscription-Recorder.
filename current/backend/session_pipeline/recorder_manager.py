@@ -18,7 +18,7 @@ from .session import create_session, write_session_json
 
 FRAME_W = 640
 FRAME_H = 480
-FPS = 20.0
+FPS = 28.0
 RATE = 48000
 CHANNELS = 2
 
