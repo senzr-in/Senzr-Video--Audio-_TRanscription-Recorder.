@@ -43,3 +43,27 @@ if(OPENSSL_FOUND)
     target_compile_definitions(edge-gateway-backend PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
     target_link_libraries(edge-gateway-backend PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 endif()
+
+# Benchmark executable (C++ port of benchmark.py)
+add_executable(edge-gateway-benchmark
+    src/benchmark.cpp
+)
+
+target_include_directories(edge-gateway-benchmark PRIVATE
+    include
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+)
+
+if(TARGET nlohmann_json::nlohmann_json)
+    target_link_libraries(edge-gateway-benchmark PRIVATE nlohmann_json::nlohmann_json)
+endif()
+
+if(SQLite3_FOUND)
+    target_include_directories(edge-gateway-benchmark PRIVATE ${SQLite3_INCLUDE_DIRS})
+    target_link_libraries(edge-gateway-benchmark PRIVATE ${SQLite3_LIBRARIES})
+endif()
+
+if(OPENSSL_FOUND)
+    target_compile_definitions(edge-gateway-benchmark PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
+    target_link_libraries(edge-gateway-benchmark PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+endif()
