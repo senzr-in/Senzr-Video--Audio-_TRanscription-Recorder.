@@ -1,0 +1,36 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Senzr OS Global Platform Configuration
+# Default Location: /etc/senzr/senzr.conf
+# ─────────────────────────────────────────────────────────────────────────────
+
+[device]
+# Primary interface used for hardware MAC resolution (eth0, end0, wlan0)
+primary_interface = eth0
+
+# Optional custom override for device identifier (defaults to physical MAC)
+# device_id = c4:54:e8:12:34:56
+
+[fota]
+s3_bucket = senzr-fota-storage
+s3_region = us-east-1
+s3_prefix = app-releases
+reboot_after_update = false
+check_interval_sec = 60
+app_service = edge-gateway
+health_check_url = http://127.0.0.1:8000/api/status
+
+[mqtt]
+broker = mqtt.fieldseasy.com
+port = 1883
+user = iot-device
+password = Senzr123
+broadcast_topic = edge-gateway/update
+
+[gpio]
+# Pin mappings for Orange Pi 5 Max (RK3588)
+door_relay_pin = 44
+buzzer_pin = 45
+status_led_pin = 46
+door_sensor_pin = 47
+wiegand_d0_pin = 48
+wiegand_d1_pin = 49

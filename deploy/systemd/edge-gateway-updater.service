@@ -1,0 +1,15 @@
+[Unit]
+Description=Edge Gateway C++ OTA/FOTA Updater Daemon
+After=network.target edge-gateway.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/edge-gateway
+EnvironmentFile=-/opt/edge-gateway/updater_config.env
+ExecStart=/opt/edge-gateway/bin/edge-gateway-updater
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

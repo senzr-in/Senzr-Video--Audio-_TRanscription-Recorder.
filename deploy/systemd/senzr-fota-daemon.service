@@ -1,0 +1,19 @@
+[Unit]
+Description=Senzr OS FOTA Update Daemon
+After=network.target network-online.target edge-gateway.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/edge-gateway
+EnvironmentFile=-/etc/senzr/fota.env
+EnvironmentFile=-/opt/edge-gateway/updater_config.env
+ExecStart=/usr/local/bin/edge-gateway-updater
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

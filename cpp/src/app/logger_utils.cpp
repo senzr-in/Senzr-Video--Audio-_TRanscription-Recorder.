@@ -34,8 +34,11 @@ std::optional<std::string> LoggerUtils::get_mac_from_ip(const std::string&) cons
 }
 
 void LoggerUtils::ensure_log_dir() const {
+    std::error_code ec;
     std::filesystem::path p(log_path_);
-    std::filesystem::create_directories(p.parent_path());
+    if (p.has_parent_path()) {
+        std::filesystem::create_directories(p.parent_path(), ec);
+    }
 }
 
 void LoggerUtils::write_file_log(const std::string& json_line) const {

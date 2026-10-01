@@ -1,0 +1,15 @@
+[Unit]
+Description=Edge Gateway C++ Core Service
+After=network.target nginx.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/edge-gateway
+ExecStart=/opt/edge-gateway/bin/edge-gateway-backend
+Restart=always
+RestartSec=3
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

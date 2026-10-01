@@ -45,6 +45,13 @@ rknn-toolkit2-2.3.2/
 v2.3.2.zip
 
 cpp/build/
+build/
+deploy/work/
+*.img
+*.img.xz
+*.iso
+.vscode/
+*.zip
 CMakeCache.txt
 CMakeFiles/
 *.o
