@@ -5,7 +5,7 @@
 int main() {
     std::cout << "========================================\n"
               << "      Senzr OS SDK Application Demo     \n"
-              << "      SDK Version: " << SENZR_SDK_VERSION_STRING << "\n"
+              << "      SDK Version: " << senzr::version_string() << "\n"
               << "========================================\n\n";
 
     // 1. Device Hardware Information
@@ -18,13 +18,16 @@ int main() {
               << "  IP Address    : " << dev.get_ip_address() << "\n\n";
 
     // 2. Hardware Telemetry & Health
-    auto metrics = dev.get_system_metrics();
-    std::cout << "[Telemetry]\n"
-              << "  CPU Temp      : " << std::fixed << std::setprecision(1) << metrics.cpu_temp_c << " °C\n"
-              << "  CPU Usage     : " << std::fixed << std::setprecision(1) << metrics.cpu_usage_percent << " %\n"
-              << "  RAM (Used/Tot): " << metrics.ram_used_mb << " / " << metrics.ram_total_mb << " MB\n"
-              << "  Disk(Used/Tot): " << metrics.disk_used_mb << " / " << metrics.disk_total_mb << " MB\n"
-              << "  Uptime        : " << metrics.uptime_seconds << " s\n\n";
+    auto metrics_res = dev.get_system_metrics();
+    if (metrics_res) {
+        const auto& metrics = metrics_res.value();
+        std::cout << "[Telemetry]\n"
+                  << "  CPU Temp      : " << std::fixed << std::setprecision(1) << metrics.cpu_temp_c << " °C\n"
+                  << "  CPU Usage     : " << std::fixed << std::setprecision(1) << metrics.cpu_usage_percent << " %\n"
+                  << "  RAM (Used/Tot): " << metrics.ram_used_mb << " / " << metrics.ram_total_mb << " MB\n"
+                  << "  Disk(Used/Tot): " << metrics.disk_used_mb << " / " << metrics.disk_total_mb << " MB\n"
+                  << "  Uptime        : " << metrics.uptime_seconds << " s\n\n";
+    }
 
     // 3. FOTA Engine
     senzr::fota::Client fota;
@@ -41,6 +44,11 @@ int main() {
                   << (pin.mode == senzr::gpio::PinMode::Output ? "OUT" : "IN")
                   << " [State: " << (pin.state == senzr::gpio::PinState::High ? "HIGH" : "LOW") << "]\n";
     }
+
+    // 5. Offline Storage Engine
+    senzr::Storage storage;
+    std::cout << "[Storage Engine]\n"
+              << "  Configured DB : database/edge_gateway.db\n";
 
     std::cout << "\n========================================\n"
               << "Senzr OS SDK initialized successfully!\n"

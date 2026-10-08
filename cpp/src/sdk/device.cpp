@@ -1,4 +1,5 @@
 #include "senzr/device.hpp"
+#include "platform/common/platform_detect.hpp"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -8,33 +9,47 @@
 #include <chrono>
 #include <thread>
 #include <filesystem>
+#include <mutex>
 #include <sys/statvfs.h>
 #include <unistd.h>
 
 namespace senzr {
+inline namespace v1 {
+
+struct Device::Impl {
+    std::mutex mutex;
+    std::string cached_mac;
+    std::string cached_serial;
+
+    static std::string exec_cmd(const std::string& cmd) {
+        std::array<char, 256> buffer{};
+        std::string result;
+#ifdef _WIN32
+        std::unique_ptr<FILE, decltype(&_pclose)> pipe(_popen(cmd.c_str(), "r"), _pclose);
+#else
+        std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
+#endif
+        if (!pipe) return "";
+        while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe.get()) != nullptr) {
+            result += buffer.data();
+        }
+        return result;
+    }
+};
+
+Device::Device() : pimpl_(std::make_unique<Impl>()) {}
+Device::~Device() = default;
+Device::Device(Device&&) noexcept = default;
+Device& Device::operator=(Device&&) noexcept = default;
 
 Device& Device::get_instance() {
     static Device instance;
     return instance;
 }
 
-std::string Device::exec_cmd(const std::string& cmd) {
-    std::array<char, 256> buffer{};
-    std::string result;
-#ifdef _WIN32
-    std::unique_ptr<FILE, decltype(&_pclose)> pipe(_popen(cmd.c_str(), "r"), _pclose);
-#else
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
-#endif
-    if (!pipe) return "";
-    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe.get()) != nullptr) {
-        result += buffer.data();
-    }
-    return result;
-}
-
 std::string Device::get_mac_address(const std::string& preferred_iface) {
-    if (!cached_mac_.empty()) return cached_mac_;
+    std::lock_guard<std::mutex> lock(pimpl_->mutex);
+    if (!pimpl_->cached_mac.empty()) return pimpl_->cached_mac;
 
     std::vector<std::string> ifaces;
     if (!preferred_iface.empty()) ifaces.push_back(preferred_iface);
@@ -52,7 +67,7 @@ std::string Device::get_mac_address(const std::string& preferred_iface) {
                     mac = mac.substr(start, end - start + 1);
                 }
                 if (!mac.empty() && mac != "00:00:00:00:00:00") {
-                    cached_mac_ = mac;
+                    pimpl_->cached_mac = mac;
                     return mac;
                 }
             }
@@ -73,14 +88,15 @@ std::string Device::get_normalized_mac() {
 }
 
 std::string Device::get_serial_number() {
-    if (!cached_serial_.empty()) return cached_serial_;
+    std::lock_guard<std::mutex> lock(pimpl_->mutex);
+    if (!pimpl_->cached_serial.empty()) return pimpl_->cached_serial;
 
     // 1. Check device-tree
     if (std::filesystem::exists("/proc/device-tree/serial-number")) {
         std::ifstream f("/proc/device-tree/serial-number");
         std::string s;
         if (std::getline(f, s) && !s.empty()) {
-            cached_serial_ = s;
+            pimpl_->cached_serial = s;
             return s;
         }
     }
@@ -90,158 +106,182 @@ std::string Device::get_serial_number() {
         std::ifstream f("/etc/machine-id");
         std::string s;
         if (f >> s && !s.empty()) {
-            cached_serial_ = s;
+            pimpl_->cached_serial = s;
             return s;
         }
     }
 
-    cached_serial_ = get_normalized_mac();
-    return cached_serial_;
+    // Fallback to normalized MAC
+    std::string norm = "";
+    for (char c : (pimpl_->cached_mac.empty() ? "00:00:00:00:00:00" : pimpl_->cached_mac)) {
+        if (c != ':' && c != '-' && c != ' ') {
+            norm += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+    }
+    pimpl_->cached_serial = "DEVICE_UUID_" + (norm.empty() ? "DEFAULT" : norm);
+    return pimpl_->cached_serial;
 }
 
 std::string Device::get_board_model() {
-    // Try multiple device-tree model paths — works on any RK3588 board
-    // (Orange Pi 5 Max, Rock 5B, NanoPC-T6, KHADAS Edge2, Firefly ITX-3588J, etc.)
-    for (const auto& path : {
-            "/proc/device-tree/model",
-            "/sys/firmware/devicetree/base/model",
-            "/proc/device-tree/compatible"
-        }) {
-        std::filesystem::path p = path;
-        if (std::filesystem::exists(p)) {
-            std::ifstream f(p);
-            std::string model;
-            if (std::getline(f, model) && !model.empty()) {
-                // Trim null terminators that device-tree files can embed
-                model.erase(std::find(model.begin(), model.end(), '\0'), model.end());
-                if (!model.empty()) return model;
-            }
-        }
+    if (std::filesystem::exists("/proc/device-tree/model")) {
+        std::ifstream f("/proc/device-tree/model");
+        std::string s;
+        if (std::getline(f, s) && !s.empty()) return s;
     }
-    // Generic fallback: RK3588 SoC platform (no specific board assumed)
-    return "RK3588 Platform";
+    return "Orange Pi 5 Max (RK3588)";
 }
 
 std::string Device::get_firmware_version() {
-    std::filesystem::path p = "/opt/edge-gateway/current/.version";
-    if (std::filesystem::exists(p)) {
-        std::ifstream f(p);
-        std::string ver;
-        if (f >> ver && !ver.empty()) return ver;
+    for (const auto& path : {"/opt/edge-gateway/current/version.txt", "version.txt", "/etc/senzr-version"}) {
+        if (std::filesystem::exists(path)) {
+            std::ifstream f(path);
+            std::string v;
+            if (f >> v && !v.empty()) return v;
+        }
     }
-    return "1.0.0";
+    return "1.1.0";
 }
 
 std::string Device::get_ip_address() {
-    std::string out = exec_cmd("hostname -I 2>/dev/null | awk '{print $1}'");
-    out.erase(std::remove(out.begin(), out.end(), '\n'), out.end());
-    out.erase(std::remove(out.begin(), out.end(), '\r'), out.end());
-    return out.empty() ? "127.0.0.1" : out;
+    for (const auto& iface : {"eth0", "end0", "eth1", "wlan0"}) {
+        std::string cmd = "ip -4 addr show " + std::string(iface) + " 2>/dev/null | grep -oP '(?<=inet\\s)\\d+(\\.\\d+){3}' | head -n 1";
+        std::string ip = Impl::exec_cmd(cmd);
+        auto start = ip.find_first_not_of(" \t\r\n");
+        auto end   = ip.find_last_not_of(" \t\r\n");
+        if (start != std::string::npos && end != std::string::npos) {
+            ip = ip.substr(start, end - start + 1);
+            if (!ip.empty()) return ip;
+        }
+    }
+    return "127.0.0.1";
 }
 
-SystemMetrics Device::get_system_metrics() {
+Result<DeviceInfo> Device::get_device_info() {
+    DeviceInfo info;
+    info.mac_address = get_mac_address();
+    info.normalized_mac = get_normalized_mac();
+    info.serial_number = get_serial_number();
+    info.board_model = get_board_model();
+    info.firmware_version = get_firmware_version();
+    info.ip_address = get_ip_address();
+    return info;
+}
+
+Result<SystemMetrics> Device::get_system_metrics() {
     SystemMetrics m;
 
-    // CPU Temp
-    std::filesystem::path temp_path = "/sys/class/thermal/thermal_zone0/temp";
-    if (std::filesystem::exists(temp_path)) {
-        std::ifstream f(temp_path);
-        long raw_temp = 0;
-        if (f >> raw_temp) {
-            m.cpu_temp_c = raw_temp / 1000.0;
+    // 1. CPU Temperature (thermal_zone0)
+    for (const auto& tz : {"/sys/class/thermal/thermal_zone0/temp", "/sys/class/hwmon/hwmon0/temp1_input"}) {
+        if (std::filesystem::exists(tz)) {
+            std::ifstream f(tz);
+            long raw_temp = 0;
+            if (f >> raw_temp && raw_temp > 0) {
+                m.cpu_temp_c = static_cast<double>(raw_temp) / 1000.0;
+                break;
+            }
         }
     }
 
-    // Uptime
-    std::filesystem::path up_path = "/proc/uptime";
-    if (std::filesystem::exists(up_path)) {
-        std::ifstream f(up_path);
-        double up = 0;
+    // 2. RAM Info (/proc/meminfo)
+    if (std::filesystem::exists("/proc/meminfo")) {
+        std::ifstream f("/proc/meminfo");
+        std::string line;
+        uint64_t mem_total_kb = 0;
+        uint64_t mem_avail_kb = 0;
+        while (std::getline(f, line)) {
+            if (line.rfind("MemTotal:", 0) == 0) {
+                std::sscanf(line.c_str(), "MemTotal: %lu kB", &mem_total_kb);
+            } else if (line.rfind("MemAvailable:", 0) == 0) {
+                std::sscanf(line.c_str(), "MemAvailable: %lu kB", &mem_avail_kb);
+            }
+        }
+        m.ram_total_mb = mem_total_kb / 1024;
+        if (mem_total_kb >= mem_avail_kb) {
+            m.ram_used_mb = (mem_total_kb - mem_avail_kb) / 1024;
+        }
+    }
+
+    // 3. Disk Info (/)
+    struct statvfs vfs{};
+    if (statvfs("/", &vfs) == 0) {
+        uint64_t total_b = static_cast<uint64_t>(vfs.f_blocks) * vfs.f_frsize;
+        uint64_t free_b  = static_cast<uint64_t>(vfs.f_bfree) * vfs.f_frsize;
+        m.disk_total_mb = total_b / (1024 * 1024);
+        m.disk_used_mb  = (total_b - free_b) / (1024 * 1024);
+    }
+
+    // 4. Uptime (/proc/uptime)
+    if (std::filesystem::exists("/proc/uptime")) {
+        std::ifstream f("/proc/uptime");
+        double up = 0.0;
         if (f >> up) {
             m.uptime_seconds = static_cast<uint64_t>(up);
         }
     }
 
-    // RAM
-    std::filesystem::path mem_path = "/proc/meminfo";
-    if (std::filesystem::exists(mem_path)) {
-        std::ifstream f(mem_path);
-        std::string line;
-        uint64_t total_kb = 0, avail_kb = 0;
-        while (std::getline(f, line)) {
-            if (line.rfind("MemTotal:", 0) == 0) {
-                std::sscanf(line.c_str(), "MemTotal: %lu kB", &total_kb);
-            } else if (line.rfind("MemAvailable:", 0) == 0) {
-                std::sscanf(line.c_str(), "MemAvailable: %lu kB", &avail_kb);
+    // 5. CPU Usage (/proc/stat snapshot)
+    if (std::filesystem::exists("/proc/stat")) {
+        std::ifstream f("/proc/stat");
+        std::string cpu;
+        uint64_t user = 0, nice = 0, system = 0, idle = 0;
+        if (f >> cpu >> user >> nice >> system >> idle) {
+            uint64_t total = user + nice + system + idle;
+            if (total > 0) {
+                m.cpu_usage_percent = (1.0 - (static_cast<double>(idle) / total)) * 100.0;
             }
-        }
-        m.ram_total_mb = total_kb / 1024;
-        m.ram_used_mb = (total_kb >= avail_kb) ? (total_kb - avail_kb) / 1024 : 0;
-    }
-
-    // Storage
-    struct statvfs vfs{};
-    if (statvfs("/", &vfs) == 0) {
-        m.disk_total_mb = (vfs.f_blocks * vfs.f_frsize) / (1024 * 1024);
-        m.disk_used_mb  = ((vfs.f_blocks - vfs.f_bfree) * vfs.f_frsize) / (1024 * 1024);
-    }
-
-    // CPU Usage % from /proc/stat
-    static unsigned long long prev_idle = 0, prev_total = 0;
-    std::ifstream stat_file("/proc/stat");
-    if (stat_file.is_open()) {
-        std::string cpu_label;
-        unsigned long long user = 0, nice = 0, sys = 0, idle = 0, iowait = 0, irq = 0, softirq = 0, steal = 0;
-        if (stat_file >> cpu_label >> user >> nice >> sys >> idle >> iowait >> irq >> softirq >> steal) {
-            unsigned long long idle_time = idle + iowait;
-            unsigned long long total_time = user + nice + sys + idle + iowait + irq + softirq + steal;
-            if (prev_total > 0 && total_time > prev_total) {
-                unsigned long long diff_idle = idle_time - prev_idle;
-                unsigned long long diff_total = total_time - prev_total;
-                m.cpu_usage_percent = 100.0 * (1.0 - static_cast<double>(diff_idle) / static_cast<double>(diff_total));
-                if (m.cpu_usage_percent < 0.0) m.cpu_usage_percent = 0.0;
-                if (m.cpu_usage_percent > 100.0) m.cpu_usage_percent = 100.0;
-            }
-            prev_idle = idle_time;
-            prev_total = total_time;
         }
     }
 
     return m;
 }
 
-nlohmann::json Device::get_telemetry_json() {
-    auto m = get_system_metrics();
-    return {
-        {"device_id", get_mac_address()},
-        {"mac", get_mac_address()},
-        {"serial", get_serial_number()},
-        {"model", get_board_model()},
-        {"version", get_firmware_version()},
-        {"ip_address", get_ip_address()},
-        {"cpu_temp_c", m.cpu_temp_c},
-        {"cpu_usage_percent", m.cpu_usage_percent},
-        {"ram_total_mb", m.ram_total_mb},
-        {"ram_used_mb", m.ram_used_mb},
-        {"disk_total_mb", m.disk_total_mb},
-        {"disk_used_mb", m.disk_used_mb},
-        {"uptime_sec", m.uptime_seconds},
-        {"status", "online"}
-    };
+Platform Device::get_platform() {
+    return platform::detect_host_platform();
 }
 
-bool Device::reboot(int delay_seconds) {
-    if (delay_seconds > 0) {
+Result<PlatformInfo> Device::get_platform_info() {
+    return Result<PlatformInfo>::success(platform::query_platform_info());
+}
+
+bool Device::has_capability(Capability cap) {
+    return platform::query_capability(cap);
+}
+
+Result<void> Device::reboot(int delay_seconds) {
+    std::thread([delay_seconds]() {
         std::this_thread::sleep_for(std::chrono::seconds(delay_seconds));
-    }
-    return (std::system("systemctl reboot || reboot") == 0);
+        Impl::exec_cmd("reboot || sudo -n reboot 2>/dev/null");
+    }).detach();
+    return Result<void>::success();
 }
 
-bool Device::shutdown(int delay_seconds) {
-    if (delay_seconds > 0) {
+Result<void> Device::shutdown(int delay_seconds) {
+    std::thread([delay_seconds]() {
         std::this_thread::sleep_for(std::chrono::seconds(delay_seconds));
-    }
-    return (std::system("systemctl poweroff || poweroff") == 0);
+        Impl::exec_cmd("poweroff || sudo -n poweroff 2>/dev/null");
+    }).detach();
+    return Result<void>::success();
 }
 
+Result<void> Device::ensure_service_installed(const std::string& service_name) {
+    std::filesystem::path service_file = "/etc/systemd/system/" + service_name + ".service";
+    if (std::filesystem::exists(service_file)) {
+        return Result<void>::success();
+    }
+    return Result<void>(ErrorCode::NotSupported, "Service unit not present in /etc/systemd/system");
+}
+
+Result<void> Device::control_service(const std::string& action, const std::string& service_name) {
+    if (action != "start" && action != "stop" && action != "restart" && action != "reload") {
+        return Result<void>(ErrorCode::InvalidArgument, "Invalid service action: " + action);
+    }
+    std::string cmd = "systemctl " + action + " " + service_name + " 2>/dev/null || sudo -n systemctl " + action + " " + service_name + " 2>/dev/null";
+    int ret = std::system(cmd.c_str());
+    if (ret != 0) {
+        return Result<void>(ErrorCode::InternalError, "Failed to execute service action " + action);
+    }
+    return Result<void>::success();
+}
+
+} // namespace v1
 } // namespace senzr

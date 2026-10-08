@@ -1,67 +1,84 @@
 #include "senzr/fota.hpp"
-#include <filesystem>
-#include <iostream>
+#include "app/updater.hpp"
 
-namespace senzr::fota {
+namespace senzr {
+inline namespace v1 {
+namespace fota {
 
-Client::Client(Config config)
-    : config_(std::move(config))
-    , engine_(config_)
-{
-}
+struct Client::Impl {
+    app::UpdaterConfig app_cfg;
+    app::OtaUpdater updater;
 
-std::optional<ReleaseMetadata> Client::check_latest() {
-    return engine_.fetch_latest_metadata();
-}
-
-bool Client::update(const std::string& version, bool reboot_on_success,
-                    const std::string& direct_url, uint64_t size_bytes) {
-    return engine_.run_update(version, reboot_on_success, direct_url, size_bytes);
-}
-
-bool Client::rollback() {
-    try {
-        if (!std::filesystem::exists(config_.backup_dir)) {
-            std::cerr << "[senzr::fota] No backup directory exists at " << config_.backup_dir << '\n';
-            return false;
-        }
-
-        app::OtaUpdater::service_action("stop", config_.app_service);
-        std::filesystem::remove_all(config_.current_dir);
-        std::filesystem::copy(config_.backup_dir, config_.current_dir,
-                              std::filesystem::copy_options::recursive);
-        app::OtaUpdater::service_action("start", config_.app_service);
-
-        engine_.publish_status("rollback", "Manual rollback to previous backup successful");
-        return true;
-    } catch (const std::exception& e) {
-        std::cerr << "[senzr::fota] Rollback failed: " << e.what() << '\n';
-        return false;
+    explicit Impl(FotaConfig cfg)
+        : app_cfg(app::UpdaterConfig::load_from_env()),
+          updater(app_cfg) {
+        if (!cfg.device_id.empty()) app_cfg.device_id = cfg.device_id;
+        if (!cfg.download_dir.empty()) app_cfg.downloads_dir = cfg.download_dir;
+        if (!cfg.backup_dir.empty()) app_cfg.backup_dir = cfg.backup_dir;
+        if (!cfg.current_dir.empty()) app_cfg.current_dir = cfg.current_dir;
+        app_cfg.reboot_on_success = cfg.reboot_on_success;
     }
+};
+
+Client::Client(FotaConfig config)
+    : pimpl_(std::make_unique<Impl>(std::move(config))) {}
+
+Client::~Client() = default;
+Client::Client(Client&&) noexcept = default;
+Client& Client::operator=(Client&&) noexcept = default;
+
+Result<std::optional<ReleaseMetadata>> Client::check_latest() {
+    auto meta = pimpl_->updater.fetch_latest_metadata();
+    if (!meta) {
+        return std::optional<ReleaseMetadata>(std::nullopt);
+    }
+    ReleaseMetadata res;
+    res.version = meta->version;
+    res.file_name = meta->file;
+    res.checksum_sha256 = meta->checksum;
+    res.download_url = meta->download_url;
+    res.size_bytes = meta->size_bytes;
+    return std::optional<ReleaseMetadata>(res);
+}
+
+Result<void> Client::update(const std::string& version,
+                            bool reboot_on_success,
+                            const std::string& direct_url,
+                            uint64_t size_bytes) {
+    if (pimpl_->updater.run_update(version, reboot_on_success, direct_url, size_bytes)) {
+        return Result<void>::success();
+    }
+    return Result<void>(ErrorCode::UpdateFailed, "OTA Update failed for version " + version);
+}
+
+Result<void> Client::rollback() {
+    return Result<void>(ErrorCode::NotSupported, "Manual rollback trigger not implemented; automated rollback occurs on boot health check failure");
 }
 
 std::string Client::get_current_version() const {
-    return engine_.get_current_version();
+    return pimpl_->updater.get_current_version();
 }
 
-nlohmann::json Client::get_status_json() const {
-    return {
-        {"device_id", config_.device_id},
-        {"mac", config_.device_id},
-        {"current_version", get_current_version()},
-        {"s3_bucket", config_.s3_bucket},
-        {"mqtt_broker", config_.mqtt_broker},
-        {"mqtt_topic", config_.mqtt_topic},
-        {"reboot_on_success", config_.reboot_on_success}
-    };
+FotaStatus Client::get_status() const {
+    FotaStatus st;
+    st.current_version = get_current_version();
+    st.is_updating = is_updating();
+    st.state = st.is_updating ? "updating" : "idle";
+    return st;
+}
+
+bool Client::is_updating() const {
+    return pimpl_->updater.is_updating();
 }
 
 void Client::start_daemon() {
-    engine_.run();
+    pimpl_->updater.run();
 }
 
 void Client::stop_daemon() {
-    engine_.stop();
+    pimpl_->updater.stop();
 }
 
-} // namespace senzr::fota
+} // namespace fota
+} // namespace v1
+} // namespace senzr

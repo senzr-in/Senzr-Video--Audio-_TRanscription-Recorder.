@@ -1,36 +1,54 @@
 #pragma once
 
 /**
- * Senzr OS C++ SDK — libsenzr
+ * @file senzr.hpp
+ * @brief Senzr Edge OS C++ SDK — libsenzr Master Umbrella Public Header
  *
- * Enterprise-grade embedded platform library for the Senzr device ecosystem.
- * Targets the Rockchip RK3588 SoC and any standard Linux-based edge device.
+ * Commercial-grade embedded platform SDK for the Senzr device ecosystem.
+ * Targets the Rockchip RK3588/RK3588S SoC and Linux-based edge appliances.
  *
- * Compatible boards (all using RK3588 / RK3588S):
+ * Compatible hardware:
  *   - Orange Pi 5 Max      (Shenzhen Xunlong)
  *   - Rock 5B              (Radxa)
  *   - NanoPC-T6            (FriendlyElec)
  *   - KHADAS Edge2         (KHADAS)
- *   - Firefly ITX-3588J    (Firefly)
- *   - Mixtile Blade 3      (Mixtile)
- *   - FET3588-C SoM        (Forlinx Embedded)  -- GPIO map: TODO (OK3588-C carrier pinout pending)
- *   - Any custom carrier with RK3588 module (LGA/SOM)
+ *   - Standard aarch64 Linux Edge Platforms
  *
- * API surface:
- *   senzr::Device          - Hardware identity, telemetry, system control
- *   senzr::Storage         - SQLite offline storage engine (WAL, crash-recovery, events)
- *   senzr::fota::Client    - FOTA update engine with A/B rollback
- *   senzr::gpio::Manager   - 40-pin GPIO, relay pulsing, Wiegand
- *   senzr::net::Manager    - Ethernet, Wi-Fi, DHCP/static configuration
+ * Public API Subsystems:
+ *   - senzr::types               - Common SDK types and timestamps
+ *   - senzr::error               - Standardized ErrorCode and Result<T> monad
+ *   - senzr::version             - Semantic versioning constants and runtime query
+ *   - senzr::log                 - Configurable logging system
+ *   - senzr::Device              - Hardware identity, telemetry, system control
+ *   - senzr::gpio::Manager       - 40-pin GPIO, non-blocking relay pulsing, safety beam
+ *   - senzr::Storage             - Crash-resilient SQLite WAL offline storage
+ *   - senzr::net::Manager        - Ethernet, Wi-Fi Station, and Wi-Fi AP Hotspot provisioning
+ *   - senzr::watchdog::Supervisor- Hardware watchdog supervisor
+ *   - senzr::ble::Manager        - Bluetooth Low Energy peripheral and provisioning
+ *   - senzr::fota::Client        - Dual-slot A/B FOTA updates and recovery
+ *   - senzr::mqtt::Client        - Bi-directional MQTTS cloud telemetry & downlinks
+ *   - senzr::ai::PersonDetector  - YOLOv8 RK3588 NPU person detection
+ *   - senzr::ai::AnprEngine      - Automatic Number Plate Recognition (Indian HSRP & Bharat series)
+ *   - senzr::media::Recorder     - Event-driven video recording engine
  */
 
+#include "senzr/export.hpp"
+#include "senzr/types.hpp"
+#include "senzr/platform.hpp"
+#include "senzr/error.hpp"
+#include "senzr/version.hpp"
+#include "senzr/logging.hpp"
 #include "senzr/device.hpp"
-#include "senzr/storage.hpp"
-#include "senzr/fota.hpp"
 #include "senzr/gpio.hpp"
+#include "senzr/storage.hpp"
 #include "senzr/network.hpp"
-
-#define SENZR_SDK_VERSION_MAJOR 1
-#define SENZR_SDK_VERSION_MINOR 0
-#define SENZR_SDK_VERSION_PATCH 0
-#define SENZR_SDK_VERSION_STRING "1.0.0"
+#include "senzr/watchdog.hpp"
+#include "senzr/ble.hpp"
+#include "senzr/fota.hpp"
+#include "senzr/mqtt/client.hpp"
+#include "senzr/ai/types.hpp"
+#include "senzr/ai/inference.hpp"
+#include "senzr/ai/person_detector.hpp"
+#include "senzr/ai/anpr.hpp"
+#include "senzr/media/camera.hpp"
+#include "senzr/media/recorder.hpp"
