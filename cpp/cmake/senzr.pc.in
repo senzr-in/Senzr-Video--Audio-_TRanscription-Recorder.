@@ -1,0 +1,11 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+exec_prefix=@CMAKE_INSTALL_PREFIX@
+libdir=@CMAKE_INSTALL_FULL_LIBDIR@
+includedir=@CMAKE_INSTALL_FULL_INCLUDEDIR@
+
+Name: Senzr
+Description: Senzr Edge OS Commercial C++ Embedded Platform SDK
+Version: @SENZR_VERSION_STRING@
+Libs: -L${libdir} -lsenzr
+Cflags: -I${includedir}
+Requires.private: sqlite3 libcurl openssl
