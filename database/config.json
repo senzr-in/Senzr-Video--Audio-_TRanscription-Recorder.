@@ -1,7 +1,7 @@
 {
   "cameraconnected": true,
   "devicename": "edge-gateway-framework",
-  "mode": "face",
+  "mode": "object",
   "provisioningenabled": true,
   "wifipassword": "changeme123",
   "wifissid": "EdgeGateway"

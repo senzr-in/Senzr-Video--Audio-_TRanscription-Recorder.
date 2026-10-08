@@ -7,8 +7,13 @@
 #include <cstdlib>
 #include <cstring>
 #include <unistd.h>
+#include <signal.h>
+#include <csignal>
 #include <sys/types.h>
 #include <sys/statvfs.h>
+#if defined(__linux__)
+#include <sys/reboot.h>
+#endif
 
 #include <curl/curl.h>
 #include <openssl/evp.h>
@@ -238,7 +243,7 @@ std::string OtaUpdater::get_current_version() const {
         std::string v;
         if (f >> v && !v.empty()) return v;
     }
-    return "1.0.0";
+    return "0.0.0";
 }
 
 void OtaUpdater::set_current_version(const std::string& version) const {
@@ -260,8 +265,23 @@ void OtaUpdater::set_current_version(const std::string& version) const {
 
 bool OtaUpdater::acquire_lock() const {
     if (std::filesystem::exists(config_.lock_file)) {
-        log("WARNING", "Update already in progress — lock file exists: " + config_.lock_file.string());
-        return false;
+        std::ifstream f(config_.lock_file);
+        pid_t pid = 0;
+        if (f >> pid && pid > 0) {
+            // Check if PID is still alive
+            if (::kill(pid, 0) != 0) {
+                // Dead process -> clean stale lock
+                std::error_code ec;
+                std::filesystem::remove(config_.lock_file, ec);
+            } else {
+                log("WARNING", "Update already in progress — active PID: " + std::to_string(pid));
+                return false;
+            }
+        } else {
+            // Empty or invalid lock file
+            std::error_code ec;
+            std::filesystem::remove(config_.lock_file, ec);
+        }
     }
     std::ofstream f(config_.lock_file);
     if (f.is_open()) {
@@ -312,8 +332,60 @@ std::string OtaUpdater::sha256_of_file(const std::filesystem::path& path) {
 
 // ── Service control ──────────────────────────────────────────────────────────
 
+static void ensure_service_unit_installed(const std::string& service) {
+    std::filesystem::path service_file = "/etc/systemd/system/" + service + ".service";
+    if (std::filesystem::exists(service_file)) {
+        return;
+    }
+
+    std::string unit_content;
+    if (service == "edge-gateway" || service == "edge-gateway.service") {
+        unit_content =
+            "[Unit]\n"
+            "Description=Edge Gateway C++ Core Service\n"
+            "After=network.target\n\n"
+            "[Service]\n"
+            "Type=simple\n"
+            "User=root\n"
+            "WorkingDirectory=/opt/edge-gateway\n"
+            "ExecStart=/opt/edge-gateway/bin/edge-gateway-backend\n"
+            "Restart=always\n"
+            "RestartSec=3\n"
+            "KillMode=process\n\n"
+            "[Install]\n"
+            "WantedBy=multi-user.target\n";
+    }
+
+    if (!unit_content.empty()) {
+        try {
+            std::ofstream out(service_file);
+            if (out.is_open()) {
+                out << unit_content;
+                out.close();
+                std::system("systemctl --no-ask-password daemon-reload >/dev/null 2>&1 || sudo -n systemctl --no-ask-password daemon-reload >/dev/null 2>&1");
+            }
+        } catch (...) {}
+    }
+}
+
 bool OtaUpdater::service_action(const std::string& action, const std::string& service) {
-    std::string cmd = "systemctl " + action + " " + service;
+    // If stopping, check if the service is actually running under systemd
+    if (action == "stop") {
+        int check = std::system(("SYSTEMD_ASK_PASSWORD=0 systemctl --no-ask-password is-active --quiet " + service + " >/dev/null 2>&1").c_str());
+        if (check != 0) {
+            // Not running as a systemd unit (e.g. running interactively or already stopped) — skip stop
+            return true;
+        }
+    }
+
+    ensure_service_unit_installed(service);
+    std::string cmd;
+    if (::geteuid() == 0) {
+        cmd = "SYSTEMD_ASK_PASSWORD=0 systemctl --no-ask-password " + action + " " + service + " >/dev/null 2>&1";
+    } else {
+        // Non-root: try passwordless sudo first, then systemctl directly with ask-password disabled
+        cmd = "sudo -n systemctl --no-ask-password " + action + " " + service + " >/dev/null 2>&1 || SYSTEMD_ASK_PASSWORD=0 systemctl --no-ask-password " + action + " " + service + " >/dev/null 2>&1";
+    }
     int ret = std::system(cmd.c_str());
     return (ret == 0);
 }
@@ -425,9 +497,17 @@ bool OtaUpdater::download_release(const std::string& file_name, const std::files
 
     log("INFO", "Downloading " + (direct_url.empty() ? url : "[Pre-Signed S3 URL]") + " -> " + dest.string());
 
-    // Try up to 3 attempts with backoff
+    // Try up to 3 attempts with offset resumption
     for (int attempt = 1; attempt <= 3; ++attempt) {
-        FILE* fp = std::fopen(dest.string().c_str(), "wb");
+        uint64_t existing_bytes = 0;
+        std::error_code ec;
+        if (std::filesystem::exists(dest, ec)) {
+            existing_bytes = std::filesystem::file_size(dest, ec);
+            if (ec) existing_bytes = 0;
+        }
+
+        const char* open_mode = (existing_bytes > 0) ? "ab" : "wb";
+        FILE* fp = std::fopen(dest.string().c_str(), open_mode);
         if (!fp) {
             log("ERROR", "Failed to open destination file for writing: " + dest.string());
             return false;
@@ -444,6 +524,12 @@ bool OtaUpdater::download_release(const std::string& file_name, const std::files
         curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L); // 5 min for large releases
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_file_write_cb);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
+
+        // Resume download from existing offset if previous attempt was interrupted
+        if (existing_bytes > 0) {
+            log("INFO", "Resuming download from byte offset: " + std::to_string(existing_bytes));
+            curl_easy_setopt(curl, CURLOPT_RESUME_FROM_LARGE, static_cast<curl_off_t>(existing_bytes));
+        }
 
         // Only attach SigV4 if NOT using a pre-signed URL
         if (direct_url.empty()) {
@@ -462,15 +548,13 @@ bool OtaUpdater::download_release(const std::string& file_name, const std::files
         curl_easy_cleanup(curl);
         std::fclose(fp);
 
-        if (res == CURLE_OK && http_code == 200) {
+        if (res == CURLE_OK && (http_code == 200 || http_code == 206)) {
             log("INFO", "Download completed successfully on attempt " + std::to_string(attempt));
             return true;
         }
 
         log("WARNING", "Download attempt " + std::to_string(attempt) + "/3 failed: HTTP " +
                         std::to_string(http_code) + " (curl=" + std::to_string(res) + ")");
-        std::error_code ec;
-        std::filesystem::remove(dest, ec);
         if (attempt < 3) {
             std::this_thread::sleep_for(std::chrono::seconds(2 * attempt));
         }
@@ -598,8 +682,16 @@ bool OtaUpdater::run_update(const std::string& version, bool request_reboot,
         }
     } scope_guard{this};
 
-    log("INFO", "Starting OTA update to version " + version + " for device " + config_.device_id +
-                (request_reboot || config_.reboot_on_success ? " (with reboot)" : ""));
+    // 0. Duplicate Update Prevention
+    std::string current_ver = get_current_version();
+    if (!version.empty() && version != "firmware_update" && version == current_ver) {
+        log("INFO", "Device " + config_.device_id + " is already running target version " + version + " — duplicate update skipped.");
+        publish_status("already_up_to_date", "Firmware version " + version + " is already running", version);
+        return true;
+    }
+
+    log("INFO", "Starting OTA update: " + current_ver + " -> " + version + " for device " + config_.device_id +
+                (request_reboot || config_.reboot_on_success ? " (with automatic reboot)" : ""));
     publish_status("downloading", "Starting firmware update download", version);
 
     // 0. Pre-flight storage check
@@ -734,22 +826,30 @@ bool OtaUpdater::run_update(const std::string& version, bool request_reboot,
             update_success = true;
 
             if (request_reboot || config_.reboot_on_success) {
-                log("INFO", "Reboot requested after successful update. Rebooting system in 3 seconds...");
+                log("INFO", "Executing native hardware kernel reboot in 2 seconds...");
                 publish_status("rebooting", "Update complete. System is rebooting...", version);
-                std::this_thread::sleep_for(std::chrono::seconds(3));
-                // scope_guard destructor will call release_lock() before exec
-                std::system("systemctl reboot || reboot");
+                std::this_thread::sleep_for(std::chrono::seconds(2));
+                ::sync();
+#if defined(__linux__)
+                ::reboot(RB_AUTOBOOT);
+#else
+                std::system("reboot");
+#endif
                 return true;
             }
         } else {
-            log("ERROR", "Health check failed! Initiating rollback...");
+            log("ERROR", "Health check failed! Initiating rollback to previous stable backup...");
             publish_status("rollback", "Health check failed, rolling back to previous version", version);
             service_action("stop", config_.app_service);
-            std::filesystem::remove_all(config_.current_dir);
-            std::filesystem::copy(config_.backup_dir, config_.current_dir,
-                                  std::filesystem::copy_options::recursive);
+            if (std::filesystem::exists(config_.backup_dir)) {
+                std::filesystem::remove_all(config_.current_dir);
+                std::filesystem::copy(config_.backup_dir, config_.current_dir,
+                                      std::filesystem::copy_options::recursive);
+            }
             service_action("start", config_.app_service);
-            log("INFO", "Rollback completed.");
+            std::filesystem::remove(zip_path);
+            std::filesystem::remove_all(extract_dir);
+            log("INFO", "Rollback completed. Restored previous stable version.");
         }
 
     } catch (const std::exception& e) {

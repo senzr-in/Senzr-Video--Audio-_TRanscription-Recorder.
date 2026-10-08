@@ -3,105 +3,1153 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Edge Gateway — Camera Control</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <title>SenzrOS — Edge Gateway Operating System</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-  <main class="container">
-
-    <!-- ── Header ─────────────────────────────────────────── -->
-    <header class="hero">
-      <div class="hero-inner">
-        <svg class="logo" width="36" height="36" viewBox="0 0 36 36" fill="none"
-             aria-label="Edge Gateway logo" xmlns="http://www.w3.org/2000/svg">
-          <rect x="2" y="2" width="32" height="32" rx="8" stroke="currentColor" stroke-width="2"/>
-          <circle cx="18" cy="18" r="6" stroke="currentColor" stroke-width="2"/>
-          <path d="M18 4 v4 M18 28 v4 M4 18 h4 M28 18 h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-        </svg>
-        <div>
-          <h1>Edge Gateway <span class="version-badge">v2.0.0</span></h1>
-          <p class="subtitle">Camera Control Dashboard</p>
+  <div class="senzr-os-container">
+    
+    <!-- ── Left Sidebar Navigation ── -->
+    <aside class="senzr-sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-icon-box">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+            <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
+            <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>
+          </svg>
         </div>
-      </div>
-    </header>
-
-    <!-- ── Device Status Card ─────────────────────────────── -->
-    <section class="card" id="deviceStatusCard">
-      <h2>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <rect x="2" y="3" width="20" height="14" rx="2"/>
-          <path d="M8 21h8M12 17v4"/>
-        </svg>
-        Device Status
-      </h2>
-      <div class="status-grid">
-        <div class="status-item">
-          <span class="label">Status</span>
-          <p id="status" class="value loading-shimmer">Loading…</p>
-        </div>
-        <div class="status-item">
-          <span class="label">Hostname</span>
-          <p id="hostname" class="value loading-shimmer">Loading…</p>
-        </div>
-        <div class="status-item">
-          <span class="label">IP Address</span>
-          <p id="ip_address" class="value loading-shimmer">Loading…</p>
-        </div>
-      </div>
-    </section>
-
-    <!-- ── Detection Settings Card ────────────────────────── -->
-    <section class="card" id="detectionCard">
-      <h2>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="3"/>
-          <path d="M22 12h-2M4 12H2M12 4V2M12 22v-2"/>
-          <path d="M19.07 4.93l-1.41 1.41M6.34 17.66l-1.41 1.41M19.07 19.07l-1.41-1.41M6.34 6.34L4.93 4.93"/>
-        </svg>
-        Detection Settings
-      </h2>
-
-      <!-- Camera Status row -->
-      <div class="setting-row">
-        <div class="setting-info">
-          <span class="label">Camera Status</span>
-          <p id="cameraStatusText" class="value status-off">OFF</p>
-        </div>
-        <div class="camera-controls">
-          <button id="btnCameraOn"  class="btn btn-on"  onclick="cameraOn()">Turn ON</button>
-          <button id="btnCameraOff" class="btn btn-off" onclick="cameraOff()">Turn OFF</button>
+        <div class="brand-info">
+          <h2>SenzrOS <span class="badge badge-plate" style="font-size:0.65rem;">v2.4</span></h2>
+          <p>Orange Pi 5 Max • RK3588</p>
         </div>
       </div>
 
-      <div class="divider"></div>
+      <nav class="sidebar-nav">
+        <a class="nav-item active" onclick="switchTab('sentinel')" id="nav-sentinel">
+          <span class="nav-icon">⚡</span>
+          <span>Sentinel & Vision</span>
+        </a>
+        <a class="nav-item" onclick="switchTab('storage')" id="nav-storage">
+          <span class="nav-icon">💾</span>
+          <span>Storage Hub</span>
+          <span class="nav-badge" id="sidebarDiskBadge">-</span>
+        </a>
+        <a class="nav-item" onclick="switchTab('gallery')" id="nav-gallery">
+          <span class="nav-icon">🖼️</span>
+          <span>Media Gallery</span>
+          <span class="nav-badge" id="sidebarGalleryBadge">-</span>
+        </a>
+        <a class="nav-item" onclick="switchTab('hardware')" id="nav-hardware">
+          <span class="nav-icon">📊</span>
+          <span>Hardware & NPU</span>
+          <span class="nav-badge" id="sidebarNpuBadge">-</span>
+        </a>
+        <a class="nav-item" onclick="switchTab('loadlab')" id="nav-loadlab">
+          <span class="nav-icon">🧠</span>
+          <span>AI Models & Load Lab</span>
+          <span class="nav-badge" id="sidebarNpuStressBadge" style="display:none; background:var(--accent-rose); color:#fff;">STRESS</span>
+        </a>
+        <a class="nav-item" onclick="switchTab('gpio')" id="nav-gpio">
+          <span class="nav-icon">🚪</span>
+          <span>Access Control</span>
+        </a>
+        <a class="nav-item" onclick="switchTab('network')" id="nav-network">
+          <span class="nav-icon">🌐</span>
+          <span>Network & System</span>
+        </a>
+      </nav>
 
-      <!-- Recording Status row -->
-      <div class="setting-row">
-        <div class="setting-info">
-          <span class="label">Recording Status</span>
-          <p id="recordingStatus" class="value status-idle">Idle</p>
+      <div class="sidebar-footer">
+        <div class="quick-stats-mini">
+          <span>HOST: <strong id="sidebarHost" style="color:#fff;">-</strong></span>
+          <span id="sidebarUptime">-</span>
         </div>
-        <div class="recording-indicator" id="recordingDot" aria-hidden="true"></div>
-      </div>
-
-      <div class="divider"></div>
-
-      <!-- Recorded File row -->
-      <div class="setting-row">
-        <div class="setting-info full-width">
-          <span class="label">Recorded Video File</span>
-          <p id="recordedFile" class="value file-value">No recordings yet</p>
+        <div class="quick-stats-mini">
+          <span>IP: <strong id="sidebarIp" style="color:#38bdf8;">-</strong></span>
+          <span id="sidebarRtc" style="color:#34d399;">RTC ✓</span>
         </div>
       </div>
+    </aside>
 
-      <!-- Feedback message -->
-      <p id="cameraMessage" class="message" role="status" aria-live="polite"></p>
-    </section>
+    <!-- ── Main Workspace Area ── -->
+    <main class="senzr-main-area">
 
-  </main>
+      <!-- Top Header Bar -->
+      <header class="senzr-topbar">
+        <div class="topbar-left">
+          <h1 class="topbar-title" id="pageTitle">Sentinel & Vision</h1>
+          <span class="topbar-breadcrumbs" id="pageBreadcrumb">Overview / Live Stream</span>
+        </div>
 
-  <script src="/static/app.js"></script>
+        <div class="topbar-right">
+          <!-- Real-time Hardware Telemetry Chips -->
+          <div class="top-telemetry-pills">
+            <div class="telemetry-chip" title="Tri-Core NPU Temperature">
+              <span class="chip-label">NPU</span>
+              <span class="chip-val" id="topChipNpu">--°C</span>
+            </div>
+            <div class="telemetry-chip" title="8-Core CPU Temperature">
+              <span class="chip-label">CPU</span>
+              <span class="chip-val" id="topChipCpu">--°C</span>
+            </div>
+            <div class="telemetry-chip" title="System RAM Usage">
+              <span class="chip-label">RAM</span>
+              <span class="chip-val" id="topChipRam">--%</span>
+            </div>
+            <div class="telemetry-chip" title="Root NVMe/eMMC Disk Usage">
+              <span class="chip-label">DISK</span>
+              <span class="chip-val" id="topChipDisk">--%</span>
+            </div>
+          </div>
+
+          <!-- Quick Action: Door Unlock Pulse -->
+          <button class="btn btn-pulse-green" id="btnTopQuickUnlock" onclick="unlockDoor(3000)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+            <span id="quickUnlockText">Unlock Door (3s)</span>
+          </button>
+
+          <!-- System Status Pill -->
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="pulse-indicator" id="topPulse"></span>
+            <span class="status-pill status-pill-online font-mono" id="topStatusPill">ONLINE</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- Workspace View Container -->
+      <div class="workspace-content">
+
+        <!-- ══════════════════════════════════════════════════════════════════════
+             TAB 1: SENTINEL & LIVE VISION
+             ══════════════════════════════════════════════════════════════════════ -->
+        <section class="tab-pane active" id="pane-sentinel">
+          <div class="sentinel-layout">
+            
+            <!-- Left: Live Stream & Controls -->
+            <div class="glass-panel">
+              <div class="panel-header">
+                <div>
+                  <h3 class="panel-title">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    Live AI Sentinel Stream
+                  </h3>
+                  <p class="panel-desc">Zero-lag MJPEG stream with RKNN YOLOv8 & Embedded OCR</p>
+                </div>
+                <div style="display:flex; gap:8px;">
+                  <button id="btnCameraOn" class="btn btn-primary btn-sm" onclick="cameraOn()">Start Pipeline</button>
+                  <button id="btnCameraOff" class="btn btn-danger btn-sm" onclick="cameraOff()">Stop</button>
+                </div>
+              </div>
+
+              <!-- Live Stream Viewport -->
+              <div class="stream-viewport-box">
+                <div class="stream-overlay-top">
+                  <div class="stream-tag live" id="streamTagLive">
+                    <span class="rec-blink" id="streamRecBlink" style="display:none;"></span>
+                    <span id="streamStatusText">STREAM ACTIVE</span>
+                  </div>
+                  <div class="stream-fps-tag" id="streamFpsTag">25 FPS • RK3588 NPU</div>
+                </div>
+
+                <img id="visionLiveFeed" class="stream-live-element" src="/api/vision/stream" alt="Live AI Stream" onerror="handleStreamError(this)" onload="handleStreamLoaded(this)" />
+
+                <div id="streamPlaceholder" class="stream-fallback-msg" style="display:none;">
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                  <h4>Camera Pipeline Inactive or Stream Offline</h4>
+                  <p>Click 'Start Pipeline' to launch the hardware video capture & neural inference engine.</p>
+                  <button class="btn btn-primary" onclick="cameraOn()">Start Pipeline Now</button>
+                </div>
+              </div>
+
+              <!-- Detection Mode Selector -->
+              <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+                <span style="font-size:0.8rem; font-weight:600; color:var(--text-muted); text-transform:uppercase;">AI Detection Mode:</span>
+                <div class="mode-segmented-bar" style="max-width:680px; flex:1;">
+                  <button id="modeBoth" class="seg-pill-btn active" onclick="setVisionMode('both')">
+                    <span>⚡</span> All Combined
+                  </button>
+                  <button id="modeVehicle" class="seg-pill-btn" onclick="setVisionMode('vehicle')">
+                    <span>🚗</span> Vehicles Only
+                  </button>
+                  <button id="modePlate" class="seg-pill-btn" onclick="setVisionMode('plate')">
+                    <span>🔤</span> Number Plates
+                  </button>
+                  <button id="modePerson" class="seg-pill-btn" onclick="setVisionMode('person')">
+                    <span>👤</span> Persons Only
+                  </button>
+                </div>
+              </div>
+
+              <!-- Stream Quick Actions & Camera Source Settings -->
+              <div style="display:flex; flex-direction:column; gap:12px; border-top:1px solid var(--border-subtle); padding-top:14px;">
+                <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:space-between;">
+                  <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                    <button class="btn btn-secondary btn-sm" onclick="captureSnapshot()">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                      Snapshot
+                    </button>
+                    <button class="btn btn-secondary btn-sm" onclick="reloadStream()">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                      Reconnect
+                    </button>
+                    <button class="btn btn-secondary btn-sm" onclick="triggerBuzzer(2, 100)">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+                      Beep
+                    </button>
+                  </div>
+                  <button class="btn btn-secondary btn-sm" onclick="toggleCameraSourceBox()" id="btnToggleCamSource">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg>
+                    ⚙️ Configure Camera Source
+                  </button>
+                </div>
+
+                <!-- Collapsible IP Camera Source Box -->
+                <div id="cameraSourceBox" style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; display:flex; flex-direction:column; gap:10px;">
+                  <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span style="font-size:0.82rem; font-weight:700; color:var(--accent-cyan); text-transform:uppercase;">📹 Video Stream Input Configuration</span>
+                    <span class="badge badge-plate" id="camSourceTypeBadge" style="font-size:0.65rem;">RTSP STREAM</span>
+                  </div>
+
+                  <div class="input-group">
+                    <label style="font-size:0.75rem; color:var(--text-muted);">Direct RTSP URL or V4L2 Index (e.g. /dev/video0 or 0)</label>
+                    <input type="text" id="cameraSourceInput" placeholder="rtsp://admin:admin123@192.168.39.202:554/live?profile=Profile_0000" style="font-family:monospace; font-size:0.8rem;" />
+                  </div>
+
+                  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <button class="btn btn-primary btn-sm" onclick="saveCameraSource()" style="flex:1;">
+                      Apply & Connect Stream
+                    </button>
+                    <button class="btn btn-secondary btn-sm" onclick="setPresetCameraSource('rtsp://admin:admin123@192.168.39.202:554/live?profile=Profile_0000')">
+                      Preset: IP Camera (192.168.39.202)
+                    </button>
+                    <button class="btn btn-secondary btn-sm" onclick="setPresetCameraSource('0')">
+                      Preset: USB /dev/video0
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <p id="cameraMessage" class="feedback-msg"></p>
+            </div>
+
+            <!-- Right: Real-time Telemetry & Live Feed -->
+            <div style="display:flex; flex-direction:column; gap:20px;">
+              
+              <!-- Real-time Counters -->
+              <div class="glass-panel" style="gap:12px;">
+                <h4 style="font-size:0.9rem; font-weight:700; color:#fff; text-transform:uppercase; letter-spacing:0.04em;">Real-Time AI Sentinel</h4>
+                
+                <div class="stat-card">
+                  <span class="stat-label">License Plate Detected (ANPR)</span>
+                  <div class="stat-value font-mono" id="telPlateText" style="color:var(--accent-cyan); font-size:1.45rem;">-</div>
+                  <span class="stat-sub" id="telPlateConf">Optical Character Recognition</span>
+                </div>
+
+                <div class="stat-card">
+                  <span class="stat-label">Persons In Frame</span>
+                  <div class="stat-value font-mono" id="telPersonCount" style="color:var(--accent-emerald);">0</div>
+                  <span class="stat-sub" id="telPersonConf">Confidence: -</span>
+                </div>
+
+                <div class="stat-card">
+                  <span class="stat-label">Session Recording</span>
+                  <div class="stat-value font-mono" id="recordingStatus" style="font-size:1rem;">Idle</div>
+                  <span class="stat-sub" id="recordedFile" style="word-break:break-all;">No active session</span>
+                </div>
+              </div>
+
+              <!-- Quick Detections Feed -->
+              <div class="glass-panel" style="flex:1;">
+                <div class="panel-header">
+                  <h4 style="font-size:0.9rem; font-weight:700; color:#fff;">Live Detections Log</h4>
+                  <button class="btn btn-secondary btn-sm" onclick="loadOfflineStorage()">Refresh</button>
+                </div>
+                <div class="table-container" style="max-height:260px; overflow-y:auto;">
+                  <table style="font-size:0.8rem;">
+                    <thead>
+                      <tr>
+                        <th>Time</th>
+                        <th>Type</th>
+                        <th>Details</th>
+                        <th>Snap</th>
+                      </tr>
+                    </thead>
+                    <tbody id="quickEventsBody">
+                      <tr><td colspan="4" style="text-align:center; padding:12px; color:var(--text-muted);">Listening for detections...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </section>
+
+
+        <!-- ══════════════════════════════════════════════════════════════════════
+             TAB 2: STORAGE HUB
+             ══════════════════════════════════════════════════════════════════════ -->
+        <section class="tab-pane" id="pane-storage">
+          <div style="display:flex; flex-direction:column; gap:20px;">
+            
+            <!-- Root Disk Gauge Panel -->
+            <div class="glass-panel">
+              <div class="panel-header">
+                <div>
+                  <h3 class="panel-title">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+                    Root Storage Meter (NVMe / eMMC)
+                  </h3>
+                  <p class="panel-desc">Physical filesystem health and capacity monitoring for Orange Pi 5 Max</p>
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="loadStorageHub()">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                  Refresh Storage
+                </button>
+              </div>
+
+              <div class="storage-meter-box">
+                <div class="progress-track">
+                  <div class="progress-fill" id="rootDiskProgress" style="width: 0%;"></div>
+                </div>
+                <div class="meter-legend">
+                  <span>Used: <strong id="rootDiskUsed" style="color:#fff;">- GB</strong> (<span id="rootDiskPct">-%</span>)</span>
+                  <span>Free: <strong id="rootDiskFree" style="color:var(--accent-emerald);">- GB</strong></span>
+                  <span>Total: <strong id="rootDiskTotal" style="color:var(--accent-cyan);">- GB</strong></span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Deep Breakdown Grid -->
+            <div class="grid-4col">
+              
+              <!-- Video Sessions -->
+              <div class="glass-panel stat-card">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                  <span class="stat-label">Video Sessions</span>
+                  <span style="font-size:1.3rem;">🎥</span>
+                </div>
+                <div class="stat-value font-mono" id="storageVideosSize">- MB</div>
+                <div class="stat-sub">
+                  <strong id="storageVideosCount" style="color:#fff;">0</strong> recorded files
+                </div>
+                <div style="font-size:0.7rem; color:var(--text-muted); font-family:monospace; margin-top:4px;">
+                  /opt/edge-gateway/recordings
+                </div>
+              </div>
+
+              <!-- Plate Snapshots -->
+              <div class="glass-panel stat-card">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                  <span class="stat-label">Plate Snapshots</span>
+                  <span style="font-size:1.3rem;">🚗</span>
+                </div>
+                <div class="stat-value font-mono" id="storagePlatesSize" style="color:var(--accent-cyan);">- MB</div>
+                <div class="stat-sub">
+                  <strong id="storagePlatesCount" style="color:#fff;">0</strong> captured plates
+                </div>
+                <div style="font-size:0.7rem; color:var(--text-muted); font-family:monospace; margin-top:4px;">
+                  .../recordings/plates
+                </div>
+              </div>
+
+              <!-- Person Snapshots -->
+              <div class="glass-panel stat-card">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                  <span class="stat-label">Person Snapshots</span>
+                  <span style="font-size:1.3rem;">👤</span>
+                </div>
+                <div class="stat-value font-mono" id="storagePersonsSize" style="color:var(--accent-purple);">- MB</div>
+                <div class="stat-sub">
+                  <strong id="storagePersonsCount" style="color:#fff;">0</strong> person snaps
+                </div>
+                <div style="font-size:0.7rem; color:var(--text-muted); font-family:monospace; margin-top:4px;">
+                  .../recordings/persons
+                </div>
+              </div>
+
+              <!-- SQLite Database -->
+              <div class="glass-panel stat-card">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                  <span class="stat-label">SQLite Engine</span>
+                  <span style="font-size:1.3rem;">📦</span>
+                </div>
+                <div class="stat-value font-mono" id="storageDbSize" style="color:var(--accent-emerald);">- MB</div>
+                <div class="stat-sub">
+                  <strong id="storageDbRows" style="color:#fff;">0</strong> total rows (WAL mode)
+                </div>
+                <div style="font-size:0.7rem; color:var(--text-muted); font-family:monospace; margin-top:4px;">
+                  database/edge_gateway.db
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Maintenance & Space Reclamation Tools -->
+            <div class="glass-panel">
+              <div class="panel-header">
+                <div>
+                  <h4 class="panel-title">Storage Maintenance & Disk Reclamation</h4>
+                  <p class="panel-desc">Safely prune old capture data or vacuum the database file to reclaim flash blocks</p>
+                </div>
+              </div>
+              <div style="display:flex; gap:12px; flex-wrap:wrap;">
+                <button class="btn btn-secondary btn-sm" onclick="cleanStorage('plates')">
+                  🗑️ Clean License Plate Snaps
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="cleanStorage('persons')">
+                  🗑️ Clean Person Detection Snaps
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="cleanStorage('vacuum_db')">
+                  ⚡ Vacuum & Prune SQLite DB
+                </button>
+                <button class="btn btn-danger btn-sm" onclick="cleanStorage('all')">
+                  ⚠️ Purge All Temporary Snaps
+                </button>
+              </div>
+              <p id="storageCleanMsg" class="feedback-msg"></p>
+            </div>
+
+            <!-- Recorded Sessions Table -->
+            <div class="glass-panel">
+              <div class="panel-header">
+                <h4 class="panel-title">Recorded Video Sessions & Cloud Sync</h4>
+                <button class="btn btn-secondary btn-sm" onclick="loadOfflineStorage()">Refresh</button>
+              </div>
+              <div class="table-container" style="max-height:280px; overflow-y:auto;">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Session ID</th>
+                      <th>Start Time</th>
+                      <th>Duration</th>
+                      <th>Upload Status</th>
+                      <th style="text-align:right;">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="sessionsTableBody">
+                    <tr><td colspan="5" style="text-align:center; padding:12px; color:var(--text-muted);">Loading sessions...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+
+        <!-- ══════════════════════════════════════════════════════════════════════
+             TAB 3: MEDIA & EVENTS GALLERY
+             ══════════════════════════════════════════════════════════════════════ -->
+        <section class="tab-pane" id="pane-gallery">
+          <div class="glass-panel">
+            <div class="gallery-filter-bar">
+              <div>
+                <h3 class="panel-title">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M20.4 14.5L16 10 4 20"/></svg>
+                  Visual Media & Snapshot Gallery
+                </h3>
+                <p class="panel-desc">High-resolution event captures stored locally on device</p>
+              </div>
+
+              <!-- Filter Selector & Refresh -->
+              <div style="display:flex; gap:8px; align-items:center;">
+                <div class="mode-segmented-bar" style="width:380px;">
+                  <button class="seg-pill-btn active" id="galFilterAll" onclick="setGalleryFilter('all')">All</button>
+                  <button class="seg-pill-btn" id="galFilterPlates" onclick="setGalleryFilter('plates')">🚗 Plates</button>
+                  <button class="seg-pill-btn" id="galFilterPersons" onclick="setGalleryFilter('persons')">👤 Persons</button>
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="loadGallery()">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                  Refresh
+                </button>
+              </div>
+            </div>
+
+            <!-- Media Grid -->
+            <div class="gallery-grid" id="galleryGrid">
+              <p style="grid-column: 1 / -1; text-align:center; padding:32px; color:var(--text-muted);">
+                Loading snapshots...
+              </p>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- ══════════════════════════════════════════════════════════════════════
+             TAB 4: HARDWARE & NPU TELEMETRY
+             ══════════════════════════════════════════════════════════════════════ -->
+        <section class="tab-pane" id="pane-hardware">
+          <div style="display:flex; flex-direction:column; gap:20px;">
+            
+            <div class="grid-3col">
+              
+              <!-- Tri-Core NPU -->
+              <div class="glass-panel stat-card">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span class="stat-label">Tri-Core NPU</span>
+                  <span class="badge badge-plate">6.0 TOPS</span>
+                </div>
+                <div class="stat-value font-mono" id="hwNpuTemp" style="color:var(--accent-cyan); font-size:1.8rem;">--°C</div>
+                <div class="stat-sub">Rockchip RKNN Inference Engine</div>
+              </div>
+
+              <!-- Octa-Core CPU -->
+              <div class="glass-panel stat-card">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span class="stat-label">Octa-Core CPU</span>
+                  <span class="badge badge-accent" id="hwCpuCores">8 Cores</span>
+                </div>
+                <div class="stat-value font-mono" id="hwCpuTemp" style="color:var(--accent-emerald); font-size:1.8rem;">--°C</div>
+                <div class="stat-sub" id="hwCpuLoad">Load: 0.00, 0.00, 0.00</div>
+              </div>
+
+              <!-- ARM Mali GPU -->
+              <div class="glass-panel stat-card">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span class="stat-label">Mali-G610 GPU</span>
+                  <span class="badge" style="background:rgba(255,255,255,0.06); color:#fff;">Graphics</span>
+                </div>
+                <div class="stat-value font-mono" id="hwGpuTemp" style="font-size:1.8rem;">--°C</div>
+                <div class="stat-sub">Hardware Video Compositor</div>
+              </div>
+
+            </div>
+
+            <!-- RAM & System Uptime -->
+            <div class="grid-2col">
+              
+              <!-- 16GB RAM Meter -->
+              <div class="glass-panel">
+                <div class="panel-header">
+                  <h4 class="panel-title">LPDDR5 System Memory (RAM)</h4>
+                  <span class="font-mono" id="hwRamUsedText" style="color:var(--accent-cyan); font-weight:700;">- / - MB</span>
+                </div>
+                <div class="storage-meter-box">
+                  <div class="progress-track">
+                    <div class="progress-fill" id="hwRamProgress" style="width: 0%;"></div>
+                  </div>
+                  <div class="meter-legend">
+                    <span>Used: <strong id="hwRamUsedVal">-</strong></span>
+                    <span>Free: <strong id="hwRamFreeVal" style="color:var(--accent-emerald);">-</strong></span>
+                    <span>Total: <strong id="hwRamTotalVal">-</strong></span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- System Uptime & Clock -->
+              <div class="glass-panel">
+                <div class="panel-header">
+                  <h4 class="panel-title">System Uptime & RTC Clock</h4>
+                  <span class="badge badge-plate" id="hwRtcStatus">Battery Backed (/dev/rtc0)</span>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                  <div style="font-size:1.45rem; font-weight:700; color:#fff;" class="font-mono" id="hwUptimeHuman">-</div>
+                  <p class="stat-sub">High-precision RTC quartz crystal keeps system timestamp through power cycling.</p>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Periodic Telemetry Log Table -->
+            <div class="glass-panel">
+              <div class="panel-header">
+                <h4 class="panel-title">Hardware Telemetry Log (Historical 60s Snapshots)</h4>
+                <button class="btn btn-secondary btn-sm" onclick="loadTelemetryLog()">Refresh</button>
+              </div>
+              <div class="table-container" style="max-height:260px; overflow-y:auto;">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>CPU Temp</th>
+                      <th>NPU Temp</th>
+                      <th>GPU Temp</th>
+                      <th>RAM Used</th>
+                      <th>Root Disk</th>
+                      <th>Camera Active</th>
+                    </tr>
+                  </thead>
+                  <tbody id="telemetryTableBody">
+                    <tr><td colspan="7" style="text-align:center; padding:12px; color:var(--text-muted);">Loading telemetry...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+
+        <!-- ══════════════════════════════════════════════════════════════════════
+             TAB 5: AI MODELS & NPU LOAD LAB
+             ══════════════════════════════════════════════════════════════════════ -->
+        <section class="tab-pane" id="pane-loadlab">
+          <div style="display:flex; flex-direction:column; gap:20px;">
+
+            <!-- Tri-Core NPU Hardware Real-Time Gauges -->
+            <div class="glass-panel">
+              <div class="panel-header">
+                <div>
+                  <h3 class="panel-title">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                    RK3588 Tri-Core NPU Telemetry (6.0 TOPS Total)
+                  </h3>
+                  <p class="panel-desc">Real-time hardware utilization per independent 2.0 TOPS neural core</p>
+                </div>
+                <div style="display:flex; gap:10px; align-items:center;">
+                  <span class="badge badge-accent" id="npuFreqBadge">1000 MHz Turbo</span>
+                  <span class="badge badge-plate" id="npuTempBadge">--°C</span>
+                </div>
+              </div>
+
+              <!-- 3 Core Circular Meters -->
+              <div class="grid-3col" style="margin-top:10px;">
+                
+                <!-- Core 0 Meter -->
+                <div class="glass-panel" style="text-align:center; padding:20px; background:rgba(0,0,0,0.25);">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                    <span class="stat-label">NPU CORE 0</span>
+                    <span class="badge" style="background:rgba(6,182,212,0.15); color:var(--accent-cyan);">2.0 TOPS</span>
+                  </div>
+                  <div class="npu-radial-meter">
+                    <svg viewBox="0 0 36 36" class="circular-chart cyan">
+                      <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                      <path id="npuCore0Circle" class="circle" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                      <text x="18" y="20.35" class="percentage" id="npuCore0Val">0%</text>
+                    </svg>
+                  </div>
+                  <div class="stat-sub" style="margin-top:10px; font-weight:600; color:#fff;" id="npuCore0ModelText">YOLOv8s Person/Car</div>
+                </div>
+
+                <!-- Core 1 Meter -->
+                <div class="glass-panel" style="text-align:center; padding:20px; background:rgba(0,0,0,0.25);">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                    <span class="stat-label">NPU CORE 1</span>
+                    <span class="badge" style="background:rgba(16,185,129,0.15); color:var(--accent-emerald);">2.0 TOPS</span>
+                  </div>
+                  <div class="npu-radial-meter">
+                    <svg viewBox="0 0 36 36" class="circular-chart emerald">
+                      <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                      <path id="npuCore1Circle" class="circle" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                      <text x="18" y="20.35" class="percentage" id="npuCore1Val">0%</text>
+                    </svg>
+                  </div>
+                  <div class="stat-sub" style="margin-top:10px; font-weight:600; color:#fff;" id="npuCore1ModelText">PP-OCRv4 Plate Reader</div>
+                </div>
+
+                <!-- Core 2 Meter -->
+                <div class="glass-panel" style="text-align:center; padding:20px; background:rgba(0,0,0,0.25);">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                    <span class="stat-label">NPU CORE 2</span>
+                    <span class="badge" style="background:rgba(139,92,246,0.15); color:var(--accent-purple);">2.0 TOPS</span>
+                  </div>
+                  <div class="npu-radial-meter">
+                    <svg viewBox="0 0 36 36" class="circular-chart purple">
+                      <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                      <path id="npuCore2Circle" class="circle" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                      <text x="18" y="20.35" class="percentage" id="npuCore2Val">0%</text>
+                    </svg>
+                  </div>
+                  <div class="stat-sub" style="margin-top:10px; font-weight:600; color:#fff;" id="npuCore2ModelText">YOLOv8 Pose (17-pts)</div>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- Live Camera Stream Monitor in Load Lab -->
+            <div class="glass-panel">
+              <div class="panel-header">
+                <div>
+                  <h3 class="panel-title">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    Live Optical AI Feed & Detection Stream
+                  </h3>
+                  <p class="panel-desc">Real-time MJPEG camera feed with live NPU bounding boxes & plate OCR overlays</p>
+                </div>
+                <div style="display:flex; gap:8px;">
+                  <button class="btn btn-primary btn-sm" onclick="cameraOn()">Start Camera</button>
+                  <button class="btn btn-danger btn-sm" onclick="cameraOff()">Stop Camera</button>
+                </div>
+              </div>
+
+              <!-- Live Stream Box -->
+              <div class="stream-viewport-box" style="max-height:460px;">
+                <div class="stream-overlay-top">
+                  <div class="stream-tag live">
+                    <span class="rec-blink"></span>
+                    <span>LIVE AI INFERENCE STREAM</span>
+                  </div>
+                  <div class="stream-fps-tag" id="loadLabStreamTag">RK3588 Tri-Core NPU • 25 FPS</div>
+                </div>
+
+                <img class="stream-live-element" src="/api/vision/stream" alt="Live AI Camera Feed" onerror="this.style.display='none'; document.getElementById('loadLabStreamFallback').style.display='flex';" onload="this.style.display='block'; document.getElementById('loadLabStreamFallback').style.display='none';" />
+
+                <div id="loadLabStreamFallback" class="stream-fallback-msg" style="display:none; padding:40px;">
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                  <h4>Camera Pipeline Stopped</h4>
+                  <p>Click 'Start Camera' above to launch the camera feed and hardware NPU inference.</p>
+                  <button class="btn btn-primary" onclick="cameraOn()">Start Camera</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Multi-Model Stress / Load Test Controller -->
+            <div class="glass-panel">
+              <div class="panel-header">
+                <div>
+                  <h3 class="panel-title">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+                    Multi-Model NPU Stress & Benchmark Controller
+                  </h3>
+                  <p class="panel-desc">Configure concurrent vision models, synthetic frame pumps, and benchmark duration</p>
+                </div>
+                <div id="loadTestBadge" class="badge" style="background:rgba(255,255,255,0.06); color:#fff;">IDLE</div>
+              </div>
+
+              <!-- Configuration Matrix -->
+              <div class="grid-3col" style="margin-top:15px; gap:16px;">
+                <div class="form-group">
+                  <label class="form-label" style="display:flex; justify-content:space-between;">
+                    <span>Core 0 Primary Model</span>
+                    <span style="color:var(--accent-cyan); font-size:0.75rem;">Detection</span>
+                  </label>
+                  <select id="selModelCore0" class="form-input">
+                    <option value="yolov8_plate_hd" selected>🔍 YOLOv8-Plate-HD (High-Accuracy Plate Locator)</option>
+                    <option value="yolov8_vehicle">🚗 YOLOv8 Vehicle Detector (Car/Bus/Truck)</option>
+                    <option value="yolov8n">👤 YOLOv8 Nano (Person/Vehicle)</option>
+                    <option value="yolov8s">🎯 YOLOv8 Small (High Precision)</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" style="display:flex; justify-content:space-between;">
+                    <span>Core 1 Secondary Model</span>
+                    <span style="color:var(--accent-emerald); font-size:0.75rem;">Color / ANPR</span>
+                  </label>
+                  <select id="selModelCore1" class="form-input">
+                    <option value="ppocrv4_plate_highacc" selected>🔤 PP-OCRv4 High-Accuracy Plate Reader (SVTR)</option>
+                    <option value="vehicle_color_net">🎨 Vehicle Color & Attribute AI (224x224)</option>
+                    <option value="ppocrv4_rec">⚡ PP-OCRv4 Standard Plate OCR</option>
+                    <option value="lprnet">🏎️ LPRNet Indian Plate OCR (24x94)</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" style="display:flex; justify-content:space-between;">
+                    <span>Core 2 Tertiary Model</span>
+                    <span style="color:var(--accent-purple); font-size:0.75rem;">Pose / Segmentation</span>
+                  </label>
+                  <select id="selModelCore2" class="form-input">
+                    <option value="yolov8n_pose" selected>🤸 YOLOv8 Pose 17-pts (640x640)</option>
+                    <option value="yolov8n_seg">🧩 YOLOv8 Segmentation</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Load parameters -->
+              <div class="grid-3col" style="margin-top:10px; gap:16px;">
+                <div class="form-group">
+                  <label class="form-label">Duration</label>
+                  <select id="selDurationSec" class="form-input">
+                    <option value="15">15 Seconds (Quick burst)</option>
+                    <option value="30">30 Seconds</option>
+                    <option value="60" selected>60 Seconds (Standard benchmark)</option>
+                    <option value="180">3 Minutes (Thermal soak)</option>
+                    <option value="300">5 Minutes (Heavy stress test)</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">Parallel Concurrency</label>
+                  <select id="selConcurrency" class="form-input">
+                    <option value="1">1 Thread</option>
+                    <option value="3" selected>3 Threads (1 per NPU Core)</option>
+                    <option value="6">6 Threads (2x saturation)</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">Target Influx Rate</label>
+                  <select id="selTargetFps" class="form-input">
+                    <option value="30">30 FPS (Standard camera)</option>
+                    <option value="60" selected>60 FPS (Dual camera)</option>
+                    <option value="120">120 FPS (Max NPU stress)</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Action Controls -->
+              <div style="display:flex; gap:12px; margin-top:20px; align-items:center; flex-wrap:wrap;">
+                <button id="btnStartLoadTest" class="btn btn-primary" onclick="startLoadTest()" style="padding:14px 28px; font-size:1rem;">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  Start NPU Load Test
+                </button>
+                <button id="btnStopLoadTest" class="btn btn-danger" onclick="stopLoadTest()" disabled style="padding:14px 24px; font-size:1rem;">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="6" width="12" height="12"/></svg>
+                  Stop Test
+                </button>
+                <button class="btn btn-secondary" onclick="exportLoadTestReport()" style="padding:14px 20px; font-size:1rem; margin-left:auto;">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Export CSV Report
+                </button>
+              </div>
+
+              <!-- Progress bar -->
+              <div id="loadTestProgressBox" style="margin-top:20px; display:none;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:6px; font-size:0.85rem;">
+                  <span>Test Progress: <strong id="loadTestElapsedText">0s / 60s</strong></span>
+                  <span id="loadTestRemainingText" style="color:var(--accent-cyan);">Running...</span>
+                </div>
+                <div class="progress-track" style="height:10px;">
+                  <div id="loadTestProgressBar" class="progress-fill" style="width:0%; background:linear-gradient(90deg, var(--accent-cyan), var(--accent-purple));"></div>
+                </div>
+              </div>
+
+              <p id="loadTestMsg" class="feedback-msg" style="margin-top:10px;"></p>
+            </div>
+
+            <!-- Live Performance Metrics Cards -->
+            <div class="grid-4col">
+              <div class="glass-panel stat-card">
+                <span class="stat-label">Inference Throughput</span>
+                <div class="stat-value font-mono" id="benchThroughputVal" style="color:var(--accent-cyan);">0.0 FPS</div>
+                <div class="stat-sub">Combined multi-model rate</div>
+              </div>
+
+              <div class="glass-panel stat-card">
+                <span class="stat-label">NPU Inference Latency</span>
+                <div class="stat-value font-mono" id="benchNpuLatencyVal" style="color:var(--accent-emerald);">0.0 ms</div>
+                <div class="stat-sub">Average execution time</div>
+              </div>
+
+              <div class="glass-panel stat-card">
+                <span class="stat-label">Total Frames Processed</span>
+                <div class="stat-value font-mono" id="benchTotalInferencesVal" style="color:#fff;">0</div>
+                <div class="stat-sub">Inferences completed</div>
+              </div>
+
+              <div class="glass-panel stat-card">
+                <span class="stat-label">Frame Drop Rate</span>
+                <div class="stat-value font-mono" id="benchDroppedVal" style="color:var(--accent-emerald);">0 (0.0%)</div>
+                <div class="stat-sub">Zero-drop real-time guarantee</div>
+              </div>
+            </div>
+
+            <!-- Available Models Catalog Table -->
+            <div class="glass-panel">
+              <div class="panel-header">
+                <div>
+                  <h4 class="panel-title">Available RKNN Vision Models Library</h4>
+                  <p class="panel-desc">Pre-compiled INT8 neural network packages ready on RK3588</p>
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="loadModelsCatalog()">Refresh Catalog</button>
+              </div>
+              <div class="table-container" style="max-height:300px; overflow-y:auto;">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Model Name</th>
+                      <th>AI Task</th>
+                      <th>Architecture</th>
+                      <th>Input Shape</th>
+                      <th>Typical Latency</th>
+                      <th>Target Core</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="modelsTableBody">
+                    <tr><td colspan="7" style="text-align:center; padding:12px; color:var(--text-muted);">Loading model catalog...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+
+        <!-- ══════════════════════════════════════════════════════════════════════
+             TAB 6: ACCESS CONTROL & GPIO
+             ══════════════════════════════════════════════════════════════════════ -->
+        <section class="tab-pane" id="pane-gpio">
+          <div style="display:flex; flex-direction:column; gap:20px;">
+            
+            <div class="glass-panel">
+              <div class="panel-header">
+                <div>
+                  <h3 class="panel-title">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    Access Control & Relay Automation
+                  </h3>
+                  <p class="panel-desc">1-Click electronic door strike release and visual/audible feedback actuators</p>
+                </div>
+              </div>
+
+              <!-- Quick Action Cards -->
+              <div class="grid-3col">
+                <button class="btn btn-primary" style="padding:16px; font-size:1rem;" onclick="unlockDoor(3000)">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+                  Unlock Door (3s Pulse)
+                </button>
+
+                <button class="btn btn-secondary" style="padding:16px; font-size:1rem;" onclick="triggerBuzzer(2, 100)">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                  Beep Buzzer (2x 100ms)
+                </button>
+
+                <button class="btn btn-secondary" style="padding:16px; font-size:1rem;" onclick="togglePin('STATUS_LED')">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="9" y1="18" x2="15" y2="18"/><line x1="10" y1="22" x2="14" y2="22"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/></svg>
+                  Toggle Status LED
+                </button>
+              </div>
+              <p id="gpioMessage" class="feedback-msg"></p>
+            </div>
+
+            <!-- 40-Pin GPIO Header Table -->
+            <div class="glass-panel">
+              <div class="panel-header">
+                <div>
+                  <h4 class="panel-title">Orange Pi 5 Max 40-Pin GPIO Header</h4>
+                  <p class="panel-desc">Real-time status of physical relay, sensor, and peripheral pins</p>
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="loadGpioPins()">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                  Refresh Pins
+                </button>
+              </div>
+
+              <div class="table-container" style="max-height:340px; overflow-y:auto;">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Header Pin</th>
+                      <th>Kernel GPIO</th>
+                      <th>Role / Alias</th>
+                      <th>Direction</th>
+                      <th>Level State</th>
+                      <th style="text-align:right;">Control</th>
+                    </tr>
+                  </thead>
+                  <tbody id="gpioTableBody">
+                    <tr><td colspan="6" style="text-align:center; padding:12px; color:var(--text-muted);">Loading GPIO pins...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+
+        <!-- ══════════════════════════════════════════════════════════════════════
+             TAB 6: NETWORK & SYSTEM CONFIGURATION
+             ══════════════════════════════════════════════════════════════════════ -->
+        <section class="tab-pane" id="pane-network">
+          <div style="display:flex; flex-direction:column; gap:20px;">
+            
+            <!-- Wi-Fi & Ethernet Grid -->
+            <div class="grid-2col">
+              
+              <!-- Wi-Fi Management -->
+              <div class="glass-panel">
+                <div class="panel-header">
+                  <h4 class="panel-title">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+                    Wi-Fi Connection
+                  </h4>
+                  <button class="btn btn-secondary btn-sm" id="btnScanWifi" onclick="scanWifi()">Scan</button>
+                </div>
+
+                <div class="stat-card">
+                  <span class="stat-label">Connected Network</span>
+                  <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-value font-mono" id="wifiStatusText" style="font-size:1.15rem;">Checking...</span>
+                    <span id="wifiSignalBadge" class="status-pill status-pill-online" style="display:none;"></span>
+                  </div>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:12px; margin-top:8px;">
+                  <div class="input-group">
+                    <label>Available Networks</label>
+                    <select id="wifiSelect" onchange="onWifiSelectChange()">
+                      <option value="">-- Click 'Scan' to list --</option>
+                    </select>
+                  </div>
+
+                  <div class="input-group" id="wifiManualGroup" style="display:none;">
+                    <label>Manual SSID</label>
+                    <input type="text" id="wifiManualSSID" placeholder="SSID name" />
+                  </div>
+
+                  <div class="input-group">
+                    <label>Password</label>
+                    <input type="password" id="wifiPassword" placeholder="Enter Wi-Fi password" />
+                  </div>
+
+                  <div style="display:flex; gap:10px;">
+                    <button class="btn btn-primary" style="flex:1;" onclick="connectWifi()">Connect</button>
+                    <button class="btn btn-secondary" onclick="disconnectWifi()">Disconnect</button>
+                  </div>
+                </div>
+                <p id="wifiMessage" class="feedback-msg"></p>
+              </div>
+
+              <!-- Ethernet LAN -->
+              <div class="glass-panel">
+                <div class="panel-header">
+                  <h4 class="panel-title">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+                    Ethernet (Gigabit LAN)
+                  </h4>
+                  <span id="ethStatusPill" class="status-pill status-pill-offline">Checking...</span>
+                </div>
+
+                <div class="stat-card">
+                  <span class="stat-label">IPv4 Address</span>
+                  <div class="stat-value font-mono" id="ethIpAddress" style="color:var(--accent-cyan); font-size:1.25rem;">-</div>
+                  <span class="stat-sub" id="ethInterface">Interface: - • Link: -</span>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:12px; margin-top:8px;">
+                  <div class="input-group">
+                    <label>IP Assignment Mode</label>
+                    <select id="ethModeSelect" onchange="onEthModeChange()">
+                      <option value="dhcp">DHCP (Automatic)</option>
+                      <option value="static">Static IP (Manual)</option>
+                    </select>
+                  </div>
+
+                  <div id="ethStaticFields" style="display:none; flex-direction:column; gap:10px;">
+                    <div style="display:flex; gap:10px;">
+                      <div class="input-group" style="flex:2;">
+                        <label>Static IP</label>
+                        <input type="text" id="ethStaticIp" placeholder="192.168.1.150" />
+                      </div>
+                      <div class="input-group" style="flex:1;">
+                        <label>CIDR</label>
+                        <input type="text" id="ethStaticPrefix" value="24" />
+                      </div>
+                    </div>
+                    <div style="display:flex; gap:10px;">
+                      <div class="input-group" style="flex:1;">
+                        <label>Gateway</label>
+                        <input type="text" id="ethStaticGateway" placeholder="192.168.1.1" />
+                      </div>
+                      <div class="input-group" style="flex:1;">
+                        <label>DNS Server</label>
+                        <input type="text" id="ethStaticDns" value="8.8.8.8" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <button class="btn btn-primary" id="btnApplyEth" onclick="applyEthernetConfig()">Apply Ethernet Settings</button>
+                </div>
+                <p id="ethMessage" class="feedback-msg"></p>
+              </div>
+
+            </div>
+
+            <!-- Timezone & Bluetooth Grid -->
+            <div class="grid-2col">
+              
+              <!-- System Clock & Timezone -->
+              <div class="glass-panel">
+                <div class="panel-header">
+                  <h4 class="panel-title">System Clock & Timezone</h4>
+                  <button class="btn btn-secondary btn-sm" id="btnSyncNtp" onclick="syncNtpTime()">Sync NTP</button>
+                </div>
+
+                <div class="stat-card">
+                  <span class="stat-label">Current Device Timestamp</span>
+                  <div class="stat-value font-mono" id="systemTime" style="color:#fff; font-size:1.15rem;">-</div>
+                  <span class="stat-sub" style="color:var(--accent-emerald);">Hardware RTC Active</span>
+                </div>
+
+                <div style="display:flex; gap:10px; margin-top:10px; align-items:flex-end;">
+                  <div class="input-group" style="flex:1;">
+                    <label>Timezone</label>
+                    <select id="timezoneSelect">
+                      <option value="Asia/Kolkata">Asia/Kolkata (IST • UTC+05:30)</option>
+                      <option value="UTC">UTC (Coordinated Universal Time)</option>
+                      <option value="Asia/Dubai">Asia/Dubai (GST • UTC+04:00)</option>
+                      <option value="Asia/Singapore">Asia/Singapore (SGT • UTC+08:00)</option>
+                      <option value="Asia/Tokyo">Asia/Tokyo (JST • UTC+09:00)</option>
+                      <option value="Europe/London">Europe/London (GMT/BST)</option>
+                      <option value="Europe/Paris">Europe/Paris (CET/CEST)</option>
+                      <option value="America/New_York">America/New_York (EST/EDT)</option>
+                      <option value="America/Chicago">America/Chicago (CST/CDT)</option>
+                      <option value="America/Los_Angeles">America/Los_Angeles (PST/PDT)</option>
+                      <option value="Australia/Sydney">Australia/Sydney (AEST/AEDT)</option>
+                    </select>
+                  </div>
+                  <button class="btn btn-primary" id="btnSaveTz" onclick="saveTimezone()">Apply</button>
+                </div>
+                <p id="timeMessage" class="feedback-msg"></p>
+              </div>
+
+              <!-- Bluetooth BLE -->
+              <div class="glass-panel">
+                <div class="panel-header">
+                  <h4 class="panel-title">Bluetooth BLE Management</h4>
+                  <div style="display:flex; gap:6px;">
+                    <button id="btnBtOn" class="btn btn-primary btn-sm" onclick="setBluetoothPower(true)">Enable</button>
+                    <button id="btnBtOff" class="btn btn-danger btn-sm" onclick="setBluetoothPower(false)">Disable</button>
+                  </div>
+                </div>
+
+                <div class="stat-card">
+                  <span class="stat-label">Bluetooth Status</span>
+                  <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-value font-mono" id="btStatusText" style="font-size:1.15rem;">Disabled</span>
+                    <span id="btAdapterName" class="font-mono" style="font-size:0.8rem; color:var(--text-muted);">-</span>
+                  </div>
+                </div>
+
+                <div style="margin-top:10px;">
+                  <button class="btn btn-secondary btn-sm" onclick="scanBluetooth()">Scan Bluetooth Devices</button>
+                  <div id="btDeviceList" class="table-container" style="max-height:120px; overflow-y:auto; margin-top:8px; padding:8px;">
+                    <p style="color:var(--text-muted); font-size:0.8rem;">Click 'Scan Bluetooth' to discover devices.</p>
+                  </div>
+                </div>
+                <p id="btMessage" class="feedback-msg"></p>
+              </div>
+
+            </div>
+
+          </div>
+        </section>
+
+      </div>
+    </main>
+
+    <!-- ── Lightbox Zoom Modal ── -->
+    <div class="lightbox-modal" id="lightboxModal" onclick="closeLightbox(event)">
+      <div class="lightbox-content" onclick="event.stopPropagation()">
+        <div class="lightbox-header">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span id="lightboxTag" class="badge badge-plate">SNAPSHOT</span>
+            <span id="lightboxTitle" style="font-weight:700; color:#fff; font-family:var(--font-mono);">-</span>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="closeLightbox()">✕ Close</button>
+        </div>
+        <div class="lightbox-body">
+          <img id="lightboxImg" class="lightbox-img" src="" alt="Snapshot Detail" />
+        </div>
+        <div class="lightbox-footer">
+          <span id="lightboxMeta" style="font-size:0.8rem; color:var(--text-muted); font-family:var(--font-mono);">-</span>
+          <a id="lightboxDownloadBtn" class="btn btn-primary btn-sm" href="" download target="_blank">
+            ⬇️ Download Image
+          </a>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="/app.js"></script>
 </body>
 </html>

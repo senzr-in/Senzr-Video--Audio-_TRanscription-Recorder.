@@ -226,6 +226,12 @@ bool Database::open() {
         return false;
     }
 
+    // If encryption key is set (SQLCipher 256-bit AES), execute PRAGMA key
+    if (!encryption_key_.empty()) {
+        std::string pragma_key = "PRAGMA key = '" + encryption_key_ + "';";
+        exec_noparams(pragma_key.c_str());
+    }
+
     // Set busy timeout (wait up to 5000ms if locked)
     sqlite3_busy_timeout(db_, 5000);
 
@@ -354,7 +360,22 @@ bool Database::open() {
         "    old_value   TEXT,"
         "    new_value   TEXT,"
         "    changed_by  TEXT DEFAULT 'system'"
-        ");"
+        ");",
+
+        // 8. Offline Access Credentials (Module 4)
+        "CREATE TABLE IF NOT EXISTS access_credentials ("
+        "    id              INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "    credential_hash TEXT UNIQUE NOT NULL,"
+        "    holder_name     TEXT,"
+        "    role            TEXT NOT NULL DEFAULT 'resident',"
+        "    plate_number    TEXT,"
+        "    valid_from      INTEGER NOT NULL DEFAULT 0,"
+        "    valid_until     INTEGER NOT NULL DEFAULT 0,"
+        "    is_revoked      INTEGER NOT NULL DEFAULT 0,"
+        "    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP"
+        ");",
+        "CREATE INDEX IF NOT EXISTS idx_cred_hash  ON access_credentials(credential_hash);",
+        "CREATE INDEX IF NOT EXISTS idx_cred_plate ON access_credentials(plate_number);"
     };
 
     bool schema_ok = true;
@@ -884,14 +905,16 @@ std::string Database::get_system_events_json(int limit) const {
 }
 
 int Database::get_row_count(const std::string& table_name) const {
-    if (table_name != "recording_sessions" &&
-        table_name != "upload_queue" &&
-        table_name != "detection_events" &&
-        table_name != "device_telemetry" &&
-        table_name != "system_events") {
+    std::string actual_table = (table_name == "recording_sessions") ? "sessions" : table_name;
+    if (actual_table != "sessions" &&
+        actual_table != "upload_queue" &&
+        actual_table != "detection_events" &&
+        actual_table != "device_telemetry" &&
+        actual_table != "system_events" &&
+        actual_table != "access_credentials") {
         return 0;
     }
-    std::string sql = "SELECT COUNT(*) FROM " + table_name + ";";
+    std::string sql = "SELECT COUNT(*) FROM " + actual_table + ";";
     int count = 0;
     exec_read(sql.c_str(), [](sqlite3_stmt*) { return SQLITE_OK; }, [&](sqlite3_stmt* stmt) {
         count = sqlite3_column_int(stmt, 0);
@@ -932,6 +955,149 @@ std::optional<std::string> Database::get_kv(const std::string& key) const {
         });
 
     return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Offline Access Credentials (Module 4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+bool Database::add_access_credential(const AccessCredentialRow& cred) {
+    const char* sql =
+        "INSERT INTO access_credentials ("
+        "    credential_hash, holder_name, role, plate_number, valid_from, valid_until, is_revoked"
+        ") VALUES (?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(credential_hash) DO UPDATE SET "
+        "    holder_name = excluded.holder_name, "
+        "    role = excluded.role, "
+        "    plate_number = excluded.plate_number, "
+        "    valid_from = excluded.valid_from, "
+        "    valid_until = excluded.valid_until, "
+        "    is_revoked = excluded.is_revoked;";
+
+    return exec_write(sql, [&](sqlite3_stmt* stmt) {
+        sqlite3_bind_text(stmt, 1, cred.credential_hash.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 2, cred.holder_name.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 3, cred.role.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 4, cred.plate_number.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int64(stmt, 5, cred.valid_from);
+        sqlite3_bind_int64(stmt, 6, cred.valid_until);
+        sqlite3_bind_int(stmt, 7, cred.is_revoked ? 1 : 0);
+        return SQLITE_OK;
+    });
+}
+
+std::optional<AccessCredentialRow> Database::validate_credential_hash(const std::string& hash) const {
+    const char* sql =
+        "SELECT id, credential_hash, holder_name, role, plate_number, valid_from, valid_until, is_revoked "
+        "FROM access_credentials "
+        "WHERE credential_hash = ? AND is_revoked = 0 "
+        "LIMIT 1;";
+
+    std::optional<AccessCredentialRow> result;
+    exec_read(
+        sql,
+        [&](sqlite3_stmt* stmt) {
+            return sqlite3_bind_text(stmt, 1, hash.c_str(), -1, SQLITE_TRANSIENT);
+        },
+        [&](sqlite3_stmt* stmt) {
+            AccessCredentialRow r;
+            r.id              = sqlite3_column_int(stmt, 0);
+            r.credential_hash = text_from_col(stmt, 1);
+            r.holder_name     = text_from_col(stmt, 2);
+            r.role            = text_from_col(stmt, 3);
+            r.plate_number    = text_from_col(stmt, 4);
+            r.valid_from      = sqlite3_column_int64(stmt, 5);
+            r.valid_until     = sqlite3_column_int64(stmt, 6);
+            r.is_revoked      = sqlite3_column_int(stmt, 7) != 0;
+
+            int64_t now_ts = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            
+            // Validate expiration window if set
+            if ((r.valid_from > 0 && now_ts < r.valid_from) ||
+                (r.valid_until > 0 && now_ts > r.valid_until)) {
+                return; // Expired / Not yet valid
+            }
+            result = r;
+        });
+
+    return result;
+}
+
+std::optional<AccessCredentialRow> Database::validate_license_plate(const std::string& plate) const {
+    const char* sql =
+        "SELECT id, credential_hash, holder_name, role, plate_number, valid_from, valid_until, is_revoked "
+        "FROM access_credentials "
+        "WHERE plate_number = ? AND is_revoked = 0 "
+        "LIMIT 1;";
+
+    std::optional<AccessCredentialRow> result;
+    exec_read(
+        sql,
+        [&](sqlite3_stmt* stmt) {
+            return sqlite3_bind_text(stmt, 1, plate.c_str(), -1, SQLITE_TRANSIENT);
+        },
+        [&](sqlite3_stmt* stmt) {
+            AccessCredentialRow r;
+            r.id              = sqlite3_column_int(stmt, 0);
+            r.credential_hash = text_from_col(stmt, 1);
+            r.holder_name     = text_from_col(stmt, 2);
+            r.role            = text_from_col(stmt, 3);
+            r.plate_number    = text_from_col(stmt, 4);
+            r.valid_from      = sqlite3_column_int64(stmt, 5);
+            r.valid_until     = sqlite3_column_int64(stmt, 6);
+            r.is_revoked      = sqlite3_column_int(stmt, 7) != 0;
+
+            int64_t now_ts = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+
+            if ((r.valid_from > 0 && now_ts < r.valid_from) ||
+                (r.valid_until > 0 && now_ts > r.valid_until)) {
+                return;
+            }
+            result = r;
+        });
+
+    return result;
+}
+
+bool Database::revoke_credential(const std::string& hash) {
+    const char* sql = "UPDATE access_credentials SET is_revoked = 1 WHERE credential_hash = ?;";
+    return exec_write(sql, [&](sqlite3_stmt* stmt) {
+        sqlite3_bind_text(stmt, 1, hash.c_str(), -1, SQLITE_TRANSIENT);
+        return SQLITE_OK;
+    });
+}
+
+std::string Database::get_access_credentials_json(int limit) const {
+    std::string sql =
+        "SELECT id, credential_hash, holder_name, role, plate_number, valid_from, valid_until, is_revoked "
+        "FROM access_credentials ORDER BY id DESC LIMIT " + std::to_string(limit) + ";";
+
+    std::ostringstream out;
+    out << "[";
+    bool first = true;
+
+    exec_read(
+        sql.c_str(),
+        [](sqlite3_stmt*) { return SQLITE_OK; },
+        [&](sqlite3_stmt* stmt) {
+            if (!first) out << ",";
+            first = false;
+            out << "{"
+                << "\"id\":" << sqlite3_column_int(stmt, 0) << ","
+                << "\"credential_hash\":\"" << escape_json_string(text_from_col(stmt, 1)) << "\","
+                << "\"holder_name\":\"" << escape_json_string(text_from_col(stmt, 2)) << "\","
+                << "\"role\":\"" << escape_json_string(text_from_col(stmt, 3)) << "\","
+                << "\"plate_number\":\"" << escape_json_string(text_from_col(stmt, 4)) << "\","
+                << "\"valid_from\":" << sqlite3_column_int64(stmt, 5) << ","
+                << "\"valid_until\":" << sqlite3_column_int64(stmt, 6) << ","
+                << "\"is_revoked\":" << (sqlite3_column_int(stmt, 7) ? "true" : "false")
+                << "}";
+        });
+
+    out << "]";
+    return out.str();
 }
 
 } // namespace app

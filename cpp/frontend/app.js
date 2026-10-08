@@ -28,6 +28,7 @@ const TAB_TITLES = {
   storage:  { title: "Storage Hub", breadcrumb: "System / Flash Storage & SQLite Database" },
   gallery:  { title: "Media Gallery", breadcrumb: "Events / License Plates & Person Captures" },
   hardware: { title: "Hardware & NPU", breadcrumb: "Hardware / RK3588 Tri-Core NPU & Octa-Core Telemetry" },
+  loadlab:  { title: "AI Models & NPU Load Lab", breadcrumb: "Benchmark / Tri-Core 6.0 TOPS Multi-Model Stress Engine" },
   gpio:     { title: "Access Control", breadcrumb: "Hardware / 40-Pin GPIO & Door Strike Relays" },
   network:  { title: "Network & System", breadcrumb: "Connectivity / Wi-Fi, Ethernet & Clock Management" }
 };
@@ -66,6 +67,9 @@ function switchTab(tabId) {
   } else if (tabId === "hardware") {
     loadHardwareTelemetry();
     loadTelemetryLog();
+  } else if (tabId === "loadlab") {
+    loadModelsCatalog();
+    updateLoadTestStatus();
   } else if (tabId === "gpio") {
     loadGpioPins();
   }
@@ -98,6 +102,60 @@ function closeLightbox(event) {
     modal.classList.remove("active");
     const img = document.getElementById("lightboxImg");
     if (img) img.src = "";
+  }
+}
+
+// ── Camera & Vision Control ────────────────────────────────────────────────
+async function cameraOn() {
+  try {
+    const res = await fetch("/api/camera/on", { method: "POST" });
+    const data = await res.json();
+    showMsg("cameraMessage", data.message || "Camera pipeline started!");
+    reloadStream();
+  } catch (err) {
+    showMsg("cameraMessage", "Failed to start camera pipeline", true);
+  }
+}
+
+async function cameraOff() {
+  try {
+    const res = await fetch("/api/camera/off", { method: "POST" });
+    const data = await res.json();
+    showMsg("cameraMessage", data.message || "Camera pipeline stopped.");
+  } catch (err) {
+    showMsg("cameraMessage", "Failed to stop camera", true);
+  }
+}
+
+function reloadStream() {
+  const img1 = document.getElementById("visionLiveFeed");
+  if (img1) img1.src = "/api/vision/stream?t=" + Date.now();
+  const img2 = document.querySelector("#pane-loadlab .stream-live-element");
+  if (img2) img2.src = "/api/vision/stream?t=" + Date.now();
+}
+
+async function captureSnapshot() {
+  window.open("/api/vision/snapshot?t=" + Date.now(), "_blank");
+}
+
+async function setVisionMode(mode) {
+  try {
+    const res = await fetch("/api/vision/mode", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: mode })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      document.querySelectorAll(".mode-segmented-bar .seg-pill-btn").forEach(btn => btn.classList.remove("active"));
+      if (mode === "both" || mode === "all") document.getElementById("modeBoth")?.classList.add("active");
+      else if (mode === "vehicle") document.getElementById("modeVehicle")?.classList.add("active");
+      else if (mode === "plate") document.getElementById("modePlate")?.classList.add("active");
+      else if (mode === "person") document.getElementById("modePerson")?.classList.add("active");
+      showMsg("cameraMessage", `AI Mode switched to: ${mode.toUpperCase()}`);
+    }
+  } catch (err) {
+    console.error("Error setting vision mode:", err);
   }
 }
 
@@ -305,9 +363,9 @@ let currentGalleryFilter = "all";
 
 function setGalleryFilter(filter) {
   currentGalleryFilter = filter;
-  document.getElementById("galFilterAll").classList.toggle("active", filter === "all");
-  document.getElementById("galFilterPlates").classList.toggle("active", filter === "plates");
-  document.getElementById("galFilterPersons").classList.toggle("active", filter === "persons");
+  document.getElementById("galFilterAll")?.classList.toggle("active", filter === "all");
+  document.getElementById("galFilterPlates")?.classList.toggle("active", filter === "plates");
+  document.getElementById("galFilterPersons")?.classList.toggle("active", filter === "persons");
   loadGallery();
 }
 
@@ -463,9 +521,10 @@ async function setVisionMode(mode) {
 
 function updateModeButtons(mode) {
   currentVisionMode = mode;
-  document.getElementById("modePerson").classList.toggle("active", mode === "person");
-  document.getElementById("modePlate").classList.toggle("active", mode === "plate");
-  document.getElementById("modeBoth").classList.toggle("active", mode === "both");
+  document.getElementById("modePerson")?.classList.toggle("active", mode === "person");
+  document.getElementById("modePlate")?.classList.toggle("active", mode === "plate");
+  document.getElementById("modeVehicle")?.classList.toggle("active", mode === "vehicle");
+  document.getElementById("modeBoth")?.classList.toggle("active", mode === "both" || mode === "all");
 }
 
 async function loadVisionTelemetry() {
@@ -480,9 +539,10 @@ async function loadVisionTelemetry() {
     const plateConfEl   = document.getElementById("telPlateConf");
 
     if (personCountEl) {
-      personCountEl.textContent = data.person_count != null ? data.person_count : "0";
-      if (data.person_count > 0 && data.persons && data.persons.length > 0) {
-        const topConf = Math.round((data.persons[0].confidence || 0) * 100);
+      const persons = data.persons || [];
+      personCountEl.textContent = persons.length;
+      if (persons.length > 0) {
+        const topConf = Math.round((persons[0].score || persons[0].confidence || 0) * 100);
         personConfEl.textContent = `Confidence: ${topConf}%`;
       } else {
         personConfEl.textContent = "Confidence: -";
@@ -490,13 +550,14 @@ async function loadVisionTelemetry() {
     }
 
     if (plateTextEl) {
-      if (data.plate_detected && data.plates && data.plates.length > 0) {
-        const topPlate = data.plates[0];
-        const clean = topPlate.plate_clean || topPlate.plate_number || "";
-        const formatted = topPlate.plate_formatted || clean;
+      const plates = data.plates || [];
+      if (plates.length > 0) {
+        const topPlate = plates[0];
+        const clean = topPlate.clean || topPlate.plate_clean || topPlate.formatted || "";
+        const formatted = topPlate.formatted || topPlate.plate_formatted || clean;
         plateTextEl.textContent = formatted || "PLATE DETECTED";
         const topConf = Math.round((topPlate.confidence || 0) * 100);
-        plateConfEl.textContent = `Confidence: ${topConf}% • Template OCR`;
+        plateConfEl.textContent = `Confidence: ${topConf}% • ANPR OCR`;
       } else {
         plateTextEl.textContent = "-";
         plateConfEl.textContent = "Optical Character Recognition";
@@ -508,6 +569,8 @@ async function loadVisionTelemetry() {
     }
   } catch (err) {}
 }
+
+
 
 function reloadStream() {
   const img = document.getElementById("visionLiveFeed");
@@ -574,6 +637,69 @@ async function cameraOff() {
     handleStreamError(document.getElementById("visionLiveFeed"));
   } catch (err) {
     showMsg("cameraMessage", "Failed to stop camera", true);
+  }
+}
+
+// ── IP Camera / Stream Source Configuration ────────────────────────────────
+async function loadCameraConfig() {
+  try {
+    const res = await fetch("/api/camera/config", { cache: "no-store" });
+    if (!res.ok) return;
+    const data = await res.json();
+    const input = document.getElementById("cameraSourceInput");
+    const badge = document.getElementById("camSourceTypeBadge");
+    if (input && data.source) {
+      input.value = data.source;
+    }
+    if (badge) {
+      badge.textContent = data.type === "rtsp" ? "RTSP STREAM" : "LOCAL V4L2";
+      badge.className = data.type === "rtsp" ? "badge badge-plate" : "badge badge-emerald";
+    }
+  } catch (err) {
+    console.error("Failed to load camera config:", err);
+  }
+}
+
+async function saveCameraSource() {
+  const input = document.getElementById("cameraSourceInput");
+  if (!input || !input.value.trim()) {
+    showMsg("cameraMessage", "Please enter a valid RTSP stream URL or device index", true);
+    return;
+  }
+  const source = input.value.trim();
+  try {
+    showMsg("cameraMessage", "Applying new camera stream source...");
+    const res = await fetch("/api/camera/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source: source, restart: true })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showMsg("cameraMessage", "Camera source updated: " + source, false);
+      loadCameraConfig();
+      loadCameraStatus();
+      setTimeout(reloadStream, 1000);
+    } else {
+      showMsg("cameraMessage", data.error || "Failed to update camera source", true);
+    }
+  } catch (err) {
+    showMsg("cameraMessage", "Network error updating camera source", true);
+  }
+}
+
+function setPresetCameraSource(presetUrl) {
+  const input = document.getElementById("cameraSourceInput");
+  if (input) {
+    input.value = presetUrl;
+    saveCameraSource();
+  }
+}
+
+function toggleCameraSourceBox() {
+  const box = document.getElementById("cameraSourceBox");
+  if (box) {
+    box.style.display = (box.style.display === "none") ? "flex" : "none";
   }
 }
 
@@ -1139,10 +1265,211 @@ async function syncNtpTime() {
   }
 }
 
+// ── AI Models & NPU Load Lab ───────────────────────────────────────────────
+let isLoadTestActive = false;
+
+async function loadModelsCatalog() {
+  try {
+    const res = await fetch("/api/models/list");
+    if (!res.ok) return;
+    const data = await res.json();
+    const tbody = document.getElementById("modelsTableBody");
+    if (!tbody || !data.models) return;
+
+    if (data.models.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:12px; color:var(--text-muted);">No models discovered.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = data.models.map(m => `
+      <tr>
+        <td><strong>${escapeHtml(m.name)}</strong></td>
+        <td><span class="badge badge-accent">${escapeHtml(m.task)}</span></td>
+        <td class="font-mono" style="color:var(--text-secondary); font-size:0.8rem;">${escapeHtml(m.architecture)}</td>
+        <td class="font-mono" style="color:var(--accent-cyan); font-size:0.8rem;">${escapeHtml(m.input_shape)}</td>
+        <td class="font-mono" style="color:var(--accent-emerald); font-size:0.85rem;">${m.default_latency_ms} ms</td>
+        <td><span class="badge badge-plate">${escapeHtml(m.target_core)}</span></td>
+        <td><span class="badge" style="background:rgba(16,185,129,0.15); color:var(--accent-emerald);">Installed</span></td>
+      </tr>
+    `).join("");
+  } catch (err) {
+    console.error("Error loading model catalog:", err);
+  }
+}
+
+async function startLoadTest() {
+  const m1 = document.getElementById("selModelCore0")?.value || "yolov8_vehicle";
+  const m2 = document.getElementById("selModelCore1")?.value || "vehicle_color_net";
+  const m3 = document.getElementById("selModelCore2")?.value || "yolov8n_pose";
+  const duration = parseInt(document.getElementById("selDurationSec")?.value || "60", 10);
+  const concurrency = parseInt(document.getElementById("selConcurrency")?.value || "3", 10);
+  const target_fps = parseInt(document.getElementById("selTargetFps")?.value || "60", 10);
+
+  const btnStart = document.getElementById("btnStartLoadTest");
+  const btnStop = document.getElementById("btnStopLoadTest");
+  if (btnStart) btnStart.disabled = true;
+
+  showMsg("loadTestMsg", "Initializing multi-core NPU load test...");
+
+  try {
+    const res = await fetch("/api/loadtest/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model_core0: m1,
+        model_core1: m2,
+        model_core2: m3,
+        duration_sec: duration,
+        concurrency: concurrency,
+        target_fps: target_fps
+      })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      isLoadTestActive = true;
+      if (btnStop) btnStop.disabled = false;
+      showMsg("loadTestMsg", "NPU stress test running across 3 cores!");
+      updateLoadTestUI(data.status);
+    } else {
+      showMsg("loadTestMsg", data.message || "Failed to start test", true);
+      if (btnStart) btnStart.disabled = false;
+    }
+  } catch (err) {
+    showMsg("loadTestMsg", "Network error starting load test", true);
+    if (btnStart) btnStart.disabled = false;
+  }
+}
+
+async function stopLoadTest() {
+  const btnStop = document.getElementById("btnStopLoadTest");
+  if (btnStop) btnStop.disabled = true;
+
+  try {
+    const res = await fetch("/api/loadtest/stop", { method: "POST" });
+    const data = await res.json();
+    isLoadTestActive = false;
+    showMsg("loadTestMsg", "Load test stopped.");
+    const btnStart = document.getElementById("btnStartLoadTest");
+    if (btnStart) btnStart.disabled = false;
+    updateLoadTestUI(data.status);
+  } catch (err) {
+    showMsg("loadTestMsg", "Error stopping load test", true);
+  }
+}
+
+async function updateLoadTestStatus() {
+  try {
+    const res = await fetch("/api/loadtest/status");
+    if (!res.ok) return;
+    const st = await res.json();
+    updateLoadTestUI(st);
+  } catch (err) {
+    console.error("Error polling load test status:", err);
+  }
+}
+
+function updateLoadTestUI(st) {
+  if (!st) return;
+
+  isLoadTestActive = !!st.running;
+
+  // Buttons & badges
+  const btnStart = document.getElementById("btnStartLoadTest");
+  const btnStop = document.getElementById("btnStopLoadTest");
+  const badge = document.getElementById("loadTestBadge");
+  const sidebarStress = document.getElementById("sidebarNpuStressBadge");
+
+  if (btnStart) btnStart.disabled = isLoadTestActive;
+  if (btnStop) btnStop.disabled = !isLoadTestActive;
+
+  if (badge) {
+    if (isLoadTestActive) {
+      badge.textContent = "STRESSING NPU (3 CORES)";
+      badge.style.background = "rgba(244,63,94,0.2)";
+      badge.style.color = "var(--accent-rose)";
+      badge.style.border = "1px solid rgba(244,63,94,0.4)";
+    } else {
+      badge.textContent = "IDLE";
+      badge.style.background = "rgba(255,255,255,0.06)";
+      badge.style.color = "#fff";
+      badge.style.border = "none";
+    }
+  }
+
+  if (sidebarStress) {
+    sidebarStress.style.display = isLoadTestActive ? "inline-block" : "none";
+  }
+
+  // Radial Meters
+  const c0 = st.npu?.core0_load_pct || 0;
+  const c1 = st.npu?.core1_load_pct || 0;
+  const c2 = st.npu?.core2_load_pct || 0;
+
+  const circle0 = document.getElementById("npuCore0Circle");
+  const val0 = document.getElementById("npuCore0Val");
+  if (circle0) circle0.setAttribute("stroke-dasharray", `${Math.min(100, Math.round(c0))}, 100`);
+  if (val0) val0.textContent = `${Math.round(c0)}%`;
+
+  const circle1 = document.getElementById("npuCore1Circle");
+  const val1 = document.getElementById("npuCore1Val");
+  if (circle1) circle1.setAttribute("stroke-dasharray", `${Math.min(100, Math.round(c1))}, 100`);
+  if (val1) val1.textContent = `${Math.round(c1)}%`;
+
+  const circle2 = document.getElementById("npuCore2Circle");
+  const val2 = document.getElementById("npuCore2Val");
+  if (circle2) circle2.setAttribute("stroke-dasharray", `${Math.min(100, Math.round(c2))}, 100`);
+  if (val2) val2.textContent = `${Math.round(c2)}%`;
+
+  // Freq & Temp
+  const freqBadge = document.getElementById("npuFreqBadge");
+  if (freqBadge && st.npu?.frequency_mhz) {
+    freqBadge.textContent = `${st.npu.frequency_mhz} MHz Turbo`;
+  }
+  const tempBadge = document.getElementById("npuTempBadge");
+  if (tempBadge && st.npu_temp_c != null) {
+    tempBadge.textContent = `${st.npu_temp_c.toFixed(1)}°C`;
+  }
+
+  // Performance metrics
+  const tpEl = document.getElementById("benchThroughputVal");
+  if (tpEl) tpEl.textContent = `${(st.current_fps || 0).toFixed(1)} FPS`;
+
+  const latEl = document.getElementById("benchNpuLatencyVal");
+  if (latEl) latEl.textContent = `${(st.latency_npu_ms || 0).toFixed(1)} ms`;
+
+  const infEl = document.getElementById("benchTotalInferencesVal");
+  if (infEl) infEl.textContent = (st.total_inferences || 0).toLocaleString();
+
+  const dropEl = document.getElementById("benchDroppedVal");
+  if (dropEl) dropEl.textContent = `${st.dropped_frames || 0} (0.0%)`;
+
+  // Progress box
+  const progBox = document.getElementById("loadTestProgressBox");
+  if (progBox) {
+    if (isLoadTestActive && st.duration_sec > 0) {
+      progBox.style.display = "block";
+      const pct = Math.min(100, Math.round((st.elapsed_sec / st.duration_sec) * 100));
+      const progBar = document.getElementById("loadTestProgressBar");
+      if (progBar) progBar.style.width = `${pct}%`;
+      const elText = document.getElementById("loadTestElapsedText");
+      if (elText) elText.textContent = `${st.elapsed_sec}s / ${st.duration_sec}s (${pct}%)`;
+      const remText = document.getElementById("loadTestRemainingText");
+      if (remText) remText.textContent = `${Math.max(0, st.duration_sec - st.elapsed_sec)}s remaining`;
+    } else {
+      progBox.style.display = "none";
+    }
+  }
+}
+
+function exportLoadTestReport() {
+  window.open("/api/loadtest/export", "_blank");
+}
+
 // ── Init & Auto-refresh ────────────────────────────────────────────────────
 window.addEventListener("DOMContentLoaded", () => {
   loadDeviceStatus();
   loadCameraStatus();
+  loadCameraConfig();
   loadVisionTelemetry();
   loadHardwareTelemetry();
   loadStorageHub();
@@ -1152,11 +1479,15 @@ window.addEventListener("DOMContentLoaded", () => {
   loadGpioPins();
   loadOfflineStorage();
   loadGallery();
+  loadModelsCatalog();
 
-  // Fast loop for live sentinel detections (every 1s)
+  // Fast loop for live sentinel detections and active load testing (every 1s)
   setInterval(() => {
     loadVisionTelemetry();
     loadCameraStatus();
+    if (activeTab === "loadlab" || isLoadTestActive) {
+      updateLoadTestStatus();
+    }
   }, 1000);
 
   // Moderate loop for hardware telemetry and storage (every 3s)
@@ -1171,3 +1502,4 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   }, 3000);
 });
+

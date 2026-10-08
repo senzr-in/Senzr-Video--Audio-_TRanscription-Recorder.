@@ -33,7 +33,7 @@ struct UpdaterConfig {
     std::string app_service{"edge-gateway"};
     std::string health_check_url{"http://127.0.0.1:8000/api/status"};
     std::filesystem::path lock_file{"/tmp/edge-gateway-update.lock"};
-    bool reboot_on_success{false};
+    bool reboot_on_success{true};
     std::vector<std::string> required_files{
         "frontend/index.html",
         "database/config.json"

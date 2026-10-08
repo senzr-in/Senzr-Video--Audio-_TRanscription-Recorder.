@@ -155,8 +155,19 @@ bool NtpClient::sync_system_clock(const std::string& server) {
         write_to_hardware_rtc();
         return true;
     } else {
-        std::cout << "[NTP] Fetched time from " << res->server_used
-                  << ", but clock_settime requires root/sudo permissions.\n";
+        // Non-root fallback: attempt non-interactive sudo date update
+        struct tm tm_utc{};
+        gmtime_r(&ts.tv_sec, &tm_utc);
+        char date_buf[64];
+        std::strftime(date_buf, sizeof(date_buf), "%Y-%m-%d %H:%M:%S", &tm_utc);
+        std::string date_cmd = "sudo -n date -u -s \"" + std::string(date_buf) + "\" >/dev/null 2>&1";
+        if (std::system(date_cmd.c_str()) == 0) {
+            std::cout << "[NTP] System clock synchronized via sudo date fallback.\n";
+            write_to_hardware_rtc();
+            return true;
+        }
+
+        std::cout << "[NTP] Time fetched (" << get_iso8601_timestamp() << "). Root/service permissions required to adjust hardware clock.\n";
         return false;
     }
 #else

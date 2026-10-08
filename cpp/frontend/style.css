@@ -971,6 +971,58 @@ tr:hover td {
   border: 1px solid rgba(244, 63, 94, 0.3);
 }
 
+/* ── NPU Radial Charts & Load Test Styles ── */
+.npu-radial-meter {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 10px auto;
+  max-width: 140px;
+}
+
+.circular-chart {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  max-height: 250px;
+}
+
+.circle-bg {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 3.2;
+}
+
+.circle {
+  fill: none;
+  stroke-width: 3.2;
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.35s ease-out;
+}
+
+.circular-chart.cyan .circle {
+  stroke: var(--accent-cyan);
+  filter: drop-shadow(0 0 6px var(--accent-cyan-glow));
+}
+
+.circular-chart.emerald .circle {
+  stroke: var(--accent-emerald);
+  filter: drop-shadow(0 0 6px var(--accent-emerald-glow));
+}
+
+.circular-chart.purple .circle {
+  stroke: var(--accent-purple);
+  filter: drop-shadow(0 0 6px rgba(139, 92, 246, 0.4));
+}
+
+.percentage {
+  fill: #fff;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.55rem;
+  font-weight: 700;
+  text-anchor: middle;
+}
+
 /* ── Responsive rules ── */
 @media (max-width: 1080px) {
   .sentinel-layout {
@@ -1001,3 +1053,5 @@ tr:hover td {
     grid-template-columns: 1fr;
   }
 }
+
+

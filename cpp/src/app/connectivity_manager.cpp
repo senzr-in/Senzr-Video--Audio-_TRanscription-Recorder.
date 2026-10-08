@@ -557,4 +557,109 @@ json ConnectivityManager::bluetooth_scan_json() const {
     return {{"devices", list}, {"count", list.size()}};
 }
 
+// ── Network Failover & Autonomous Rescue Hotspot (Module 3) ───────────────
+
+bool ConnectivityManager::configure_failover_metrics() {
+    // Set eth0 priority metric to 100, and wlan0 backup metric to 200
+    std::string eth_conn = get_nm_connection_for_iface("eth0");
+    if (!eth_conn.empty()) {
+        exec_cmd("nmcli con mod \"" + eth_conn + "\" ipv4.route-metric 100 2>/dev/null");
+    }
+
+    std::string wifi_conn = get_nm_connection_for_iface("wlan0");
+    if (!wifi_conn.empty()) {
+        exec_cmd("nmcli con mod \"" + wifi_conn + "\" ipv4.route-metric 200 2>/dev/null");
+    }
+    return true;
+}
+
+bool ConnectivityManager::check_wan_connectivity() const {
+#ifndef _WIN32
+    std::string out = exec_cmd("ping -c 1 -W 2 1.1.1.1 2>/dev/null");
+    if (out.find("1 received") != std::string::npos || out.find("1 packets received") != std::string::npos) {
+        return true;
+    }
+    std::string dns_out = exec_cmd("ping -c 1 -W 2 8.8.8.8 2>/dev/null");
+    return (dns_out.find("1 received") != std::string::npos || dns_out.find("1 packets received") != std::string::npos);
+#else
+    return true;
+#endif
+}
+
+bool ConnectivityManager::toggle_hotspot(bool enable, const std::string& ssid, const std::string& psk) {
+    if (enable) {
+        std::string cmd = "nmcli dev wifi hotspot ifname wlan0 ssid \"" + ssid + "\" password \"" + psk + "\" 2>&1";
+        std::string out = exec_cmd(cmd);
+        bool success = (out.find("successfully") != std::string::npos || out.find("Device 'wlan0' successfully") != std::string::npos);
+        hotspot_active_.store(success);
+        return success;
+    } else {
+        std::string out = exec_cmd("nmcli con down Hotspot 2>&1 || nmcli dev disconnect wlan0 2>&1");
+        hotspot_active_.store(false);
+        return true;
+    }
+}
+
+void ConnectivityManager::start_wan_monitor(int check_interval_sec, int rescue_timeout_sec) {
+    if (wan_monitor_running_.load()) return;
+
+    check_interval_sec_ = check_interval_sec;
+    rescue_timeout_sec_ = rescue_timeout_sec;
+    wan_monitor_running_.store(true);
+
+    configure_failover_metrics();
+    wan_thread_ = std::thread(&ConnectivityManager::wan_monitor_loop, this);
+}
+
+void ConnectivityManager::stop_wan_monitor() {
+    if (wan_monitor_running_.load()) {
+        wan_monitor_running_.store(false);
+        if (wan_thread_.joinable()) {
+            wan_thread_.join();
+        }
+    }
+}
+
+void ConnectivityManager::wan_monitor_loop() {
+    int consecutive_failures = 0;
+    const int threshold_cycles = rescue_timeout_sec_ / (check_interval_sec_ > 0 ? check_interval_sec_ : 10);
+
+    while (wan_monitor_running_.load()) {
+        bool online = check_wan_connectivity();
+        wan_online_.store(online);
+
+        if (!online) {
+            consecutive_failures++;
+            std::cerr << "[ConnectivityManager] WAN offline (" << consecutive_failures * check_interval_sec_ 
+                      << "s / " << rescue_timeout_sec_ << "s)" << std::endl;
+
+            // Trigger autonomous rescue hotspot fallback after WAN loss duration threshold
+            if (consecutive_failures >= threshold_cycles && !hotspot_active_.load()) {
+                std::cout << "[ConnectivityManager] WAN loss threshold reached! Activating Autonomous Rescue Hotspot..." << std::endl;
+                toggle_hotspot(true);
+            }
+        } else {
+            if (consecutive_failures >= threshold_cycles && hotspot_active_.load()) {
+                std::cout << "[ConnectivityManager] WAN connectivity restored. Deactivating Rescue Hotspot..." << std::endl;
+                toggle_hotspot(false);
+            }
+            consecutive_failures = 0;
+        }
+
+        std::this_thread::sleep_for(std::chrono::seconds(check_interval_sec_));
+    }
+}
+
+json ConnectivityManager::network_health_json() const {
+    return {
+        {"wan_online",         wan_online_.load()},
+        {"hotspot_active",     hotspot_active_.load()},
+        {"monitor_running",    wan_monitor_running_.load()},
+        {"failover_metrics", {
+            {"eth0", 100},
+            {"wlan0", 200}
+        }}
+    };
+}
+
 } // namespace app

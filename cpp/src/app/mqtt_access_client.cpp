@@ -154,12 +154,15 @@ bool MqttAccessClient::start() {
         return false;
     }
 
-    std::string client_id = "senzr-access-" + cfg.uuid;
+    std::string client_id = cfg.uuid.empty() ? "DEVICE_UUID_DEFAULT" : cfg.uuid;
     mosq_ = mosquitto_new(client_id.c_str(), true, this);
     if (!mosq_) {
         std::cerr << "[MQTT-Access] Failed to create mosquitto client instance.\n";
         return false;
     }
+#ifdef MOSQ_OPT_TCP_NODELAY
+    mosquitto_int_option(mosq_, MOSQ_OPT_TCP_NODELAY, 1);
+#endif
 
     // 1. Setup LWT (Last Will & Testament): access_device/v1/event/disconnect
     std::string lwt_topic = cfg.prefix + "/event/disconnect";
@@ -376,29 +379,35 @@ bool MqttAccessClient::publish_access_record(const std::string& record_type,
 void MqttAccessClient::on_message(const std::string& topic, const std::string& payload_str) {
     std::cout << "[MQTT-Access] <<< Message received on [" << topic << "]: " << payload_str << "\n";
 
+    // Ignore self-published replies to prevent echo loops
+    if (topic.ends_with("/setConfig_reply") || topic.ends_with("/remoteControl_reply") || 
+        topic.ends_with("/upgradeFirmware_reply") || topic.ends_with("/ota_reply")) {
+        return;
+    }
+
     try {
         auto j = json::parse(payload_str);
         std::string serial_no = j.value("serialNo", "");
 
         // 1. Automatic Provisioning: access_device/v1/cmd/{uuid}/setConfig
-        if (topic.find("/cmd/") != std::string::npos && topic.rfind("/setConfig") != std::string::npos) {
+        if (topic.find("/cmd/") != std::string::npos && topic.ends_with("/setConfig")) {
             handle_cmd_set_config(serial_no, j);
             return;
         }
 
         // 2. Remote Control: access_device/v1/cmd/{uuid}/remoteControl
-        if (topic.find("/cmd/") != std::string::npos && topic.rfind("/remoteControl") != std::string::npos) {
+        if (topic.find("/cmd/") != std::string::npos && topic.ends_with("/remoteControl")) {
             handle_cmd_remote_control(serial_no, j);
             return;
         }
 
         // 3. Remote FOTA / OTA Upgrade: access_device/v1/cmd/{uuid}/upgradeFirmware or .../ota
         if (topic.find("/cmd/") != std::string::npos &&
-            (topic.find("upgradeFirmware") != std::string::npos ||
-             topic.find("upgrade") != std::string::npos ||
-             topic.find("ota") != std::string::npos ||
-             topic.find("update") != std::string::npos ||
-             topic.find("firmware") != std::string::npos)) {
+            (topic.ends_with("/upgradeFirmware") ||
+             topic.ends_with("/upgrade") ||
+             topic.ends_with("/ota") ||
+             topic.ends_with("/update") ||
+             topic.ends_with("/firmware"))) {
             handle_cmd_ota(serial_no, j);
             return;
         }
@@ -411,7 +420,7 @@ void MqttAccessClient::on_message(const std::string& topic, const std::string& p
         }
 
         // 4. Connect Reply: access_device/v1/event/{uuid}/connect_reply
-        if (topic.rfind("/connect_reply") != std::string::npos) {
+        if (topic.ends_with("/connect_reply")) {
             handle_event_connect_reply(j);
             return;
         }
@@ -454,8 +463,9 @@ void MqttAccessClient::handle_cmd_set_config(const std::string& serial_no, const
         }
     }
 
-    // Send ACK: access_device/v1/cmd/setConfig_reply
-    std::string reply_topic = cfg.prefix + "/cmd/setConfig_reply";
+    // Send ACK: access_device/v1/cmd/{uuid}/setConfig_reply & access_device/v1/cmd/setConfig_reply
+    std::string reply_topic_scoped = cfg.prefix + "/cmd/" + cfg.uuid + "/setConfig_reply";
+    std::string reply_topic_global = cfg.prefix + "/cmd/setConfig_reply";
     json ack = {
         {"serialNo", serial_no.empty() ? generate_serial("cfg_ack") : serial_no},
         {"uuid", cfg.uuid},
@@ -465,8 +475,9 @@ void MqttAccessClient::handle_cmd_set_config(const std::string& serial_no, const
         {"data", {}}
     };
 
-    std::cout << "[MQTT-Access] >>> Publishing setConfig_reply to: " << reply_topic << "\n";
-    publish_custom(reply_topic, ack, 1);
+    std::cout << "[MQTT-Access] >>> Publishing setConfig_reply to: " << reply_topic_scoped << "\n";
+    publish_custom(reply_topic_scoped, ack, 0);
+    publish_custom(reply_topic_global, ack, 0);
 
     if (broker_changed) {
         std::cout << "[MQTT-Access] Broker configuration updated. Reconnecting to new broker...\n";
@@ -499,8 +510,9 @@ void MqttAccessClient::handle_cmd_remote_control(const std::string& serial_no, c
         success = remote_control_handler_(action, door_no, duration_ms);
     }
 
-    // Send ACK: access_device/v1/cmd/remoteControl_reply
-    std::string reply_topic = cfg.prefix + "/cmd/remoteControl_reply";
+    // Send ACK: access_device/v1/cmd/{uuid}/remoteControl_reply & access_device/v1/cmd/remoteControl_reply
+    std::string reply_topic_scoped = cfg.prefix + "/cmd/" + cfg.uuid + "/remoteControl_reply";
+    std::string reply_topic_global = cfg.prefix + "/cmd/remoteControl_reply";
     json ack = {
         {"serialNo", serial_no.empty() ? generate_serial("ctrl_ack") : serial_no},
         {"uuid", cfg.uuid},
@@ -510,7 +522,8 @@ void MqttAccessClient::handle_cmd_remote_control(const std::string& serial_no, c
         {"data", {}}
     };
 
-    publish_custom(reply_topic, ack, 1);
+    publish_custom(reply_topic_scoped, ack, 0);
+    publish_custom(reply_topic_global, ack, 0);
 }
 
 void MqttAccessClient::handle_event_connect_reply(const nlohmann::json& payload) {

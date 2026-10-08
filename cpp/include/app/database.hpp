@@ -139,6 +139,16 @@ public:
                                       const std::string& value);
     std::optional<std::string> get_kv(const std::string& key) const;
 
+    // ── Offline Access Credentials (Module 4) ─────────────────────────────────
+    bool add_access_credential(const AccessCredentialRow& cred);
+    std::optional<AccessCredentialRow> validate_credential_hash(const std::string& hash) const;
+    std::optional<AccessCredentialRow> validate_license_plate(const std::string& plate) const;
+    bool revoke_credential(const std::string& hash);
+    std::string get_access_credentials_json(int limit = 100) const;
+
+    // ── SQLCipher / Encryption Support ────────────────────────────────────────
+    void set_encryption_key(const std::string& key) { encryption_key_ = key; }
+
     // ── Scoped Transaction ────────────────────────────────────────────────────
     // RAII helper for batching multiple writes atomically.
     //
@@ -184,6 +194,7 @@ private:
                    const std::function<void(sqlite3_stmt*)>& row_fn) const noexcept;
 
     std::string   db_path_;
+    std::string   encryption_key_;
     sqlite3*      db_{nullptr};           // persistent connection (RAII)
     mutable std::recursive_mutex write_mutex_; // serialises writes; re-entrant for open()/vacuum()
 };

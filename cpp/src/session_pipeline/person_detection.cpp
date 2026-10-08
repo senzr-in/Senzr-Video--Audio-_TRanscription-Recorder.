@@ -157,6 +157,17 @@ std::vector<int> PersonDetectionWorker::nms(
     return keep;
 }
 
+static const char* COCO_CLASS_NAMES[80] = {
+    "Person", "Bicycle", "Car", "Motorcycle", "Airplane", "Bus", "Train", "Truck", "Boat", "Traffic Light",
+    "Fire Hydrant", "Stop Sign", "Parking Meter", "Bench", "Bird", "Cat", "Dog", "Horse", "Sheep", "Cow",
+    "Elephant", "Bear", "Zebra", "Giraffe", "Backpack", "Umbrella", "Handbag", "Tie", "Suitcase", "Frisbee",
+    "Skis", "Snowboard", "Sports Ball", "Kite", "Baseball Bat", "Baseball Glove", "Skateboard", "Surfboard", "Tennis Racket", "Bottle",
+    "Wine Glass", "Cup", "Fork", "Knife", "Spoon", "Bowl", "Banana", "Apple", "Sandwich", "Orange",
+    "Broccoli", "Carrot", "Hot Dog", "Pizza", "Donut", "Cake", "Chair", "Couch", "Potted Plant", "Bed",
+    "Dining Table", "Toilet", "TV", "Laptop", "Mouse", "Remote", "Keyboard", "Cell Phone", "Microwave", "Oven",
+    "Toaster", "Sink", "Refrigerator", "Book", "Clock", "Vase", "Scissors", "Teddy Bear", "Hair Drier", "Toothbrush"
+};
+
 void PersonDetectionWorker::decode_yolov8(
     const std::vector<std::vector<float>>& outputs,
     std::vector<std::array<float, 4>>&     out_boxes,
@@ -184,24 +195,22 @@ void PersonDetectionWorker::decode_yolov8(
         const float* obj_data = outputs[si * 3 + 2].data();  // [n]
 
         for (int idx = 0; idx < n; ++idx) {
-            // Fast check on Person class logit (COCO class 0)
-            float person_logit = cls_data[PERSON_CLASS_ID * n + idx];
-            float person_prob  = sigmoid_clip(person_logit);
-            if (person_prob < EARLY_OBJ_THRESH) continue;
-
-            float obj_prob = sigmoid_clip(obj_data[idx]);
-            float score    = obj_prob * person_prob;
-            if (score < EARLY_OBJ_THRESH) continue;
-
-            // Verify person is the dominant class among COCO classes
-            bool is_person_class = true;
+            int best_cls = 0;
+            float max_cls_logit = cls_data[0 * n + idx];
             for (int c = 1; c < NUM_CLASSES; ++c) {
-                if (cls_data[c * n + idx] > person_logit) {
-                    is_person_class = false;
-                    break;
+                float logit = cls_data[c * n + idx];
+                if (logit > max_cls_logit) {
+                    max_cls_logit = logit;
+                    best_cls = c;
                 }
             }
-            if (!is_person_class) continue;
+
+            float cls_prob = sigmoid_clip(max_cls_logit);
+            if (cls_prob < EARLY_OBJ_THRESH) continue;
+
+            float obj_prob = sigmoid_clip(obj_data[idx]);
+            float score    = obj_prob * cls_prob;
+            if (score < EARLY_OBJ_THRESH) continue;
 
             // Grid cell centre in 640x640 model input coordinates
             int gy = idx / fw;
@@ -245,7 +254,7 @@ void PersonDetectionWorker::decode_yolov8(
 
             out_boxes.push_back({x1, y1, x2, y2});
             out_scores.push_back(score);
-            out_cls_ids.push_back(PERSON_CLASS_ID);
+            out_cls_ids.push_back(best_cls);
         }
     }
 
@@ -260,7 +269,7 @@ void PersonDetectionWorker::decode_yolov8(
         kept_boxes.push_back(out_boxes[k]);
         kept_scores.push_back(out_scores[k]);
         kept_ids.push_back(out_cls_ids[k]);
-        if (kept_boxes.size() >= 20) break;
+        if (kept_boxes.size() >= 25) break;
     }
     out_boxes   = std::move(kept_boxes);
     out_scores  = std::move(kept_scores);
@@ -419,6 +428,7 @@ std::vector<PlateResult> PersonDetectionWorker::locate_and_read_plates(cv::Mat& 
     return results;
 }
 
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Main run loop
 // ─────────────────────────────────────────────────────────────────────────────
@@ -465,8 +475,8 @@ void PersonDetectionWorker::run(std::stop_token stoken) {
 
         std::string cur_mode = vision_mode_;
 
-        // 1. Person Detection (if mode is "person" or "both")
-        if (cur_mode == "person" || cur_mode == "both") {
+        // 1. Person Detection (if mode is "person", "both", or "vehicle")
+        if (cur_mode == "person" || cur_mode == "both" || cur_mode == "vehicle") {
 #ifdef HAVE_RKNN
         // ── Preprocess (letterbox + BGR→RGB) ─────────────────────────────────
         LetterboxInfo lb_info = letterbox(bgr, lb, MODEL_INPUT_SIZE);
@@ -602,32 +612,55 @@ void PersonDetectionWorker::run(std::stop_token stoken) {
         if (preview_cb_) {
             cv::Mat preview = bgr.clone();
 
-            // Draw person boxes (Green) - only confirmed detections
+            // Draw multi-class object boxes (Person, Car, Motorcycle, Bus, Truck, Bicycle)
             int confirmed_persons = 0;
+            int confirmed_vehicles = 0;
+
             for (size_t i = 0; i < boxes.size(); ++i) {
                 if (scores[i] < OBJ_THRESH) continue;
-                confirmed_persons++;
+
+                int cid = (i < cls_ids.size()) ? cls_ids[i] : 0;
+                std::string class_name = (cid >= 0 && cid < 80) ? COCO_CLASS_NAMES[cid] : "Object";
+                cv::Scalar box_color(0, 255, 0);
+
+                if (cid == 0) {
+                    box_color = cv::Scalar(0, 255, 0);       // Green (Person)
+                    confirmed_persons++;
+                } else if (cid == 2 || cid == 3 || cid == 5 || cid == 7 || cid == 1) {
+                    box_color = (cid == 2) ? cv::Scalar(255, 200, 0) :   // Cyan (Car)
+                                (cid == 3) ? cv::Scalar(0, 230, 255) :   // Yellow (Motorcycle)
+                                (cid == 5) ? cv::Scalar(0, 140, 255) :   // Orange (Bus)
+                                (cid == 7) ? cv::Scalar(0, 100, 255) :   // Orange-Red (Truck)
+                                             cv::Scalar(255, 180, 50);    // Sky Blue (Bicycle)
+                    confirmed_vehicles++;
+                } else if (cid >= 14 && cid <= 23) {
+                    box_color = cv::Scalar(0, 215, 255);     // Gold (Animals: Dog, Cat, Bird, etc.)
+                } else if (cid >= 62 && cid <= 73) {
+                    box_color = cv::Scalar(255, 100, 200);   // Neon Purple (Electronics: Phone, Laptop, TV)
+                } else {
+                    box_color = cv::Scalar(200, 255, 100);   // Mint Green (Other Objects: Bottles, Chairs, Bags)
+                }
 
                 int x1 = std::clamp(static_cast<int>(boxes[i][0]), 0, preview.cols - 1);
                 int y1 = std::clamp(static_cast<int>(boxes[i][1]), 0, preview.rows - 1);
                 int x2 = std::clamp(static_cast<int>(boxes[i][2]), 0, preview.cols - 1);
                 int y2 = std::clamp(static_cast<int>(boxes[i][3]), 0, preview.rows - 1);
 
-                cv::rectangle(preview, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(0, 255, 0), 2);
+                cv::rectangle(preview, cv::Point(x1, y1), cv::Point(x2, y2), box_color, 2);
 
                 int conf_pct = static_cast<int>(scores[i] * 100.0f);
-                std::string label = "Person " + std::to_string(conf_pct) + "%";
+                std::string label = class_name + " " + std::to_string(conf_pct) + "%";
 
                 int baseline = 0;
                 cv::Size sz = cv::getTextSize(label, cv::FONT_HERSHEY_SIMPLEX, 0.45, 1, &baseline);
                 int top_y = std::max(0, y1 - sz.height - 4);
                 cv::rectangle(preview, cv::Point(x1, top_y),
-                              cv::Point(x1 + sz.width + 4, y1), cv::Scalar(0, 255, 0), cv::FILLED);
+                              cv::Point(x1 + sz.width + 4, y1), box_color, cv::FILLED);
                 cv::putText(preview, label, cv::Point(x1 + 2, y1 - 2),
                             cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(0, 0, 0), 1, cv::LINE_AA);
             }
 
-            // Draw plate boxes (Amber / Yellow)
+            // Draw plate boxes (Amber / Gold)
             for (const auto& pr : plates) {
                 cv::Rect r(pr.x, pr.y, pr.w, pr.h);
                 cv::rectangle(preview, r, cv::Scalar(0, 215, 255), 2);

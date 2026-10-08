@@ -72,4 +72,17 @@ struct TelemetryRow {
     std::string vision_mode;      // "person" | "plate" | "both"
 };
 
+// ── AccessCredentialRow ───────────────────────────────────────────────────────
+// Offline access control credential for RFID, BLE tokens, and license plates.
+struct AccessCredentialRow {
+    int         id              = 0;
+    std::string credential_hash; // SHA-256 of BLE passkey / RFID card UID
+    std::string holder_name;
+    std::string role            = "resident"; // "resident" | "visitor" | "emergency" | "staff"
+    std::string plate_number;    // Normalized vehicle plate (e.g. "CA12345")
+    int64_t     valid_from      = 0;          // Unix epoch seconds
+    int64_t     valid_until     = 0;          // Unix epoch seconds
+    bool        is_revoked      = false;
+};
+
 } // namespace app

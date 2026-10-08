@@ -23,7 +23,7 @@ struct MqttAccessConfig {
     std::string device_name{"Entrance Controller"};
     std::string device_model{"CC104"};
     std::string app_version{"1.0.6"};
-    std::string sys_version{"1.0.0"};
+    std::string sys_version{"1.0.6"};
     int         heartbeat_interval_sec{30};
     bool        enabled{true};
 };

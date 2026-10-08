@@ -151,9 +151,24 @@ mkdir -p "${MOUNT_DIR}/etc/systemd/system/multi-user.target.wants"
 ln -sf "/etc/systemd/system/edge-gateway.service" "${MOUNT_DIR}/etc/systemd/system/multi-user.target.wants/edge-gateway.service"
 ln -sf "/etc/systemd/system/edge-gateway-updater.service" "${MOUNT_DIR}/etc/systemd/system/multi-user.target.wants/edge-gateway-updater.service"
 
+# Configure passwordless sudo and polkit for headless operation
+mkdir -p "${MOUNT_DIR}/etc/sudoers.d"
+echo "orangepi ALL=(ALL) NOPASSWD: ALL" > "${MOUNT_DIR}/etc/sudoers.d/010_orangepi-nopasswd"
+chmod 0440 "${MOUNT_DIR}/etc/sudoers.d/010_orangepi-nopasswd"
+
+mkdir -p "${MOUNT_DIR}/etc/polkit-1/rules.d"
+cat << 'EOF' > "${MOUNT_DIR}/etc/polkit-1/rules.d/50-senzr-systemd.rules"
+polkit.addRule(function(action, subject) {
+    if (action.id.indexOf("org.freedesktop.systemd1.manage-units") == 0) {
+        return polkit.Result.YES;
+    }
+});
+EOF
+chmod 0644 "${MOUNT_DIR}/etc/polkit-1/rules.d/50-senzr-systemd.rules"
+
 # Version tag (Initial Base Firmware Version)
-echo -n "1.0.0" > "${INSTALL_ROOT}/.version"
-echo -n "1.0.0" > "${INSTALL_ROOT}/version.txt"
+echo -n "1.0.6" > "${INSTALL_ROOT}/.version"
+echo -n "1.0.6" > "${INSTALL_ROOT}/version.txt"
 
 echo "[5/5] Finalizing image..."
 sync

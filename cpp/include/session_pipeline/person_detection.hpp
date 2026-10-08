@@ -81,7 +81,7 @@ private:
     int             person_missing_{0};
     int             frame_counter_{0};
     bool            is_recording_{false};
-    std::string     vision_mode_{"both"}; // "person", "plate", "both"
+    std::string     vision_mode_{"both"}; // "person", "plate", "vehicle", "both"
     PreviewCallback preview_cb_;
 };
 

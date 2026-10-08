@@ -4,6 +4,8 @@
 #include <vector>
 #include <map>
 #include <mutex>
+#include <atomic>
+#include <thread>
 #include <optional>
 #include <nlohmann/json.hpp>
 
@@ -76,10 +78,21 @@ public:
     // Pulse a pin (e.g. trigger door lock relay for N milliseconds, then auto-close)
     bool pulse(int physical_pin, int duration_ms = 3000, PinValue active_level = PinValue::HIGH);
     bool pulse_alias(const std::string& alias, int duration_ms = 3000, PinValue active_level = PinValue::HIGH);
+    bool cancel_pulse(int physical_pin);
 
     // Beep a buzzer asynchronously (e.g. 2 beeps on door access granted)
     bool buzzer_beep(int physical_pin, int count = 2, int on_ms = 100, int off_ms = 100);
     bool buzzer_beep_alias(const std::string& alias, int count = 2, int on_ms = 100, int off_ms = 100);
+
+    // ── Safety Beam Interlock & Debounce (Module 6.2 & 6.3) ───────────────────
+    // Instantly abort any active relay pulse and disarm relay (< 5ms response)
+    bool emergency_disarm(int relay_pin = 7);
+    void start_safety_monitor(int safety_sensor_pin = 15, int relay_pin = 7);
+    void stop_safety_monitor();
+    bool is_safety_tripped() const;
+
+    // Debounced digital read for noisy mechanical limit switches
+    PinValue digital_read_debounced(int physical_pin, int debounce_ms = 50);
 
     // ── Status & Inspection ───────────────────────────────────────────────────
     std::vector<PinInfo> get_all_pins() const;
@@ -89,6 +102,7 @@ public:
     // Helper: convert standard 40-pin header physical pin to Linux kernel GPIO number (RK3588 SoC)
     // Applies to all RK3588-based boards: Orange Pi 5 Max, Rock 5B, NanoPC-T6, KHADAS Edge2, etc.
     static int physical_to_kernel_gpio(int physical_pin);
+    static std::pair<std::string, int> kernel_gpio_to_chip_line(int kernel_gpio);
 
 private:
     bool export_pin(int kernel_gpio);
@@ -100,6 +114,13 @@ private:
     mutable std::mutex mutex_;
     std::map<int, PinInfo> pins_;               // physical_pin -> PinInfo
     std::map<std::string, int> aliases_;        // alias name -> physical_pin
+
+    // Safety Interlock & Active Pulse State
+    std::atomic<bool> safety_monitor_running_{false};
+    std::atomic<bool> safety_tripped_{false};
+    std::map<int, std::atomic<bool>*> active_pulse_flags_;
+    std::mutex pulse_mutex_;
+    std::thread safety_thread_;
 };
 
 } // namespace app

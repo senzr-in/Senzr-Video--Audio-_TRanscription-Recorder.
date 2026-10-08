@@ -144,19 +144,47 @@ PlateResult PlateUtils::validate_and_format_plate(const std::string& raw_text, f
         return c;
     };
 
-    // Correct State Code (first 2 chars must be letters)
-    if (clean.length() >= 2) {
-        clean[0] = to_letter(clean[0]);
-        clean[1] = to_letter(clean[1]);
-    }
+    // Check if this is a Bharat (BH) series plate: e.g. "22BH1234AA" (index 2-3 is "BH")
+    bool is_bh_candidate = (clean.length() >= 9 && clean[2] == 'B' && clean[3] == 'H');
 
-    // Correct Number (last 4 chars must be digits)
-    if (clean.length() >= 4) {
-        size_t len = clean.length();
-        clean[len - 4] = to_digit(clean[len - 4]);
-        clean[len - 3] = to_digit(clean[len - 3]);
-        clean[len - 2] = to_digit(clean[len - 2]);
-        clean[len - 1] = to_digit(clean[len - 1]);
+    if (is_bh_candidate) {
+        // BH format: [Year: 2 digits] [BH] [Number: 4 digits] [Series: 1-2 letters]
+        clean[0] = to_digit(clean[0]);
+        clean[1] = to_digit(clean[1]);
+        clean[2] = 'B';
+        clean[3] = 'H';
+        if (clean.length() >= 8) {
+            clean[4] = to_digit(clean[4]);
+            clean[5] = to_digit(clean[5]);
+            clean[6] = to_digit(clean[6]);
+            clean[7] = to_digit(clean[7]);
+        }
+        for (size_t i = 8; i < clean.length(); ++i) {
+            clean[i] = to_letter(clean[i]);
+        }
+    } else {
+        // Standard State format: [State: 2 letters] [RTO: 1-2 digits] [Series: 0-3 letters] [Number: 4 digits]
+        if (clean.length() >= 2) {
+            clean[0] = to_letter(clean[0]);
+            clean[1] = to_letter(clean[1]);
+        }
+
+        // Correct RTO Code (index 2 and 3 must be digits for standard 8-11 char Indian plates)
+        if (clean.length() >= 8) {
+            clean[2] = to_digit(clean[2]);
+            if (clean.length() >= 10 || std::isdigit(static_cast<unsigned char>(clean[3]))) {
+                clean[3] = to_digit(clean[3]);
+            }
+        }
+
+        // Correct Number (last 4 chars must be digits)
+        if (clean.length() >= 4) {
+            size_t len = clean.length();
+            clean[len - 4] = to_digit(clean[len - 4]);
+            clean[len - 3] = to_digit(clean[len - 3]);
+            clean[len - 2] = to_digit(clean[len - 2]);
+            clean[len - 1] = to_digit(clean[len - 1]);
+        }
     }
 
     // ── Standard Indian License Plate Format ──────────────────────────────────
@@ -188,6 +216,47 @@ PlateResult PlateUtils::validate_and_format_plate(const std::string& raw_text, f
         res.unique_digits   = match[3].str();
         res.series          = match[4].str();
         res.formatted_plate = match[1].str() + " BH " + match[3].str() + " " + match[4].str();
+        return res;
+    }
+
+    // ── US 50-State Standard Plate Formats (Module 5.2) ──────────────────────
+    // 1. California / US standard 7-char: 1ABC234 (digit + 3 letters + 3 digits)
+    static const std::regex us_ca_regex(R"(^([0-9])([A-Z]{3})([0-9]{3})$)");
+    if (std::regex_match(clean, match, us_ca_regex)) {
+        res.is_valid        = true;
+        res.state_code      = "US";
+        res.series          = match[2].str();
+        res.unique_digits   = match[1].str() + match[3].str();
+        res.formatted_plate = match[1].str() + match[2].str() + " " + match[3].str();
+        return res;
+    }
+
+    // 2. Texas / NY / Ohio 7-char: ABC1234 (3 letters + 4 digits)
+    static const std::regex us_tx_regex(R"(^([A-Z]{3})([0-9]{4})$)");
+    if (std::regex_match(clean, match, us_tx_regex)) {
+        res.is_valid        = true;
+        res.state_code      = "US";
+        res.series          = match[1].str();
+        res.unique_digits   = match[2].str();
+        res.formatted_plate = match[1].str() + " " + match[2].str();
+        return res;
+    }
+
+    // 3. Generic 6-char US: ABC123 or 123ABC
+    static const std::regex us_6char_regex(R"(^([A-Z]{3})([0-9]{3})$|^([0-9]{3})([A-Z]{3})$)");
+    if (std::regex_match(clean, match, us_6char_regex)) {
+        res.is_valid        = true;
+        res.state_code      = "US";
+        res.formatted_plate = clean;
+        return res;
+    }
+
+    // 4. US Generic 5 to 8 Alphanumeric
+    static const std::regex us_generic_regex(R"(^[A-Z0-9]{5,8}$)");
+    if (std::regex_match(clean, us_generic_regex)) {
+        res.is_valid        = true;
+        res.state_code      = "US";
+        res.formatted_plate = clean;
         return res;
     }
 
