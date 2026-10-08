@@ -1,0 +1,52 @@
+======================================================================
+  SENZR OS C++ SDK (libsenzr) HOST CTEST VERIFICATION REPORT
+======================================================================
+Date / Time        : 2026-10-08 07:18:36 UTC
+Environment        : Linux x86_64 / WSL2 (Ubuntu 22.04 LTS)
+Compiler           : GNU C++ 11.4.0 (-std=c++20)
+CMake Version      : 3.22.1
+Build Configuration: Release
+Prefix Path        : /tmp/senzr_install
+======================================================================
+
+CTEST EXECUTION RESULTS:
+
+Test project /mnt/f/PI5MAX/cpp/build
+    Start 1: public_headers
+1/9 Test #1: public_headers ...................   Passed    0.00 sec
+    Start 2: queues
+2/9 Test #2: queues ...........................   Passed    0.28 sec
+    Start 3: config
+3/9 Test #3: config ...........................   Passed    0.01 sec
+    Start 4: session
+4/9 Test #4: session ..........................   Passed    0.01 sec
+    Start 5: updater
+5/9 Test #5: updater ..........................   Passed    0.01 sec
+    Start 6: plate_utils
+6/9 Test #6: plate_utils ......................   Passed    0.13 sec
+    Start 7: platform
+7/9 Test #7: platform .........................   Passed    0.01 sec
+    Start 8: unsupported
+8/9 Test #8: unsupported ......................   Passed    0.01 sec
+    Start 9: soak
+9/9 Test #9: soak .............................   Passed    0.09 sec
+
+100% tests passed, 0 tests failed out of 9
+Total Test time (real) = 0.66 sec
+
+======================================================================
+EXTERNAL CONSUMER VERIFICATION (find_package(Senzr REQUIRED)):
+======================================================================
+Target Link       : Senzr::SDK
+External Output   :
+  === External SDK Consumer Integration Test ===
+  Senzr SDK Version: 1.1.0
+  [INFO] [ConsumerApp] Logging configured from external consumer
+  Device MAC: 00:15:5d:e7:43:27
+  Discovered GPIO pins: 17
+  ANPR validated plate: KA 05 MJ 1234
+  Consumer Detected Platform: Generic Linux (Host/ARM64)
+  [INFO] [InferenceEngine] Loaded model model.engine using backend: CPU Software
+  Consumer AI Inference Latency: 19.2978 ms
+  === External Consumer Test PASSED ===
+======================================================================

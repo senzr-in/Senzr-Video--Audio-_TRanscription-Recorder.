@@ -44,8 +44,10 @@ librknnrt.so
 rknn-toolkit2-2.3.2/
 v2.3.2.zip
 
-cpp/build/
+cpp/build*/
 build/
+cpp/installed_sdk/
+cpp/tests/sdk-consumer-test/build/
 deploy/work/
 *.img
 *.img.xz
@@ -59,3 +61,5 @@ CMakeFiles/
 *.a
 *.so
 *.out
+*.deb
+
