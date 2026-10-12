@@ -47,24 +47,45 @@ void VideoCaptureWorker::run(std::stop_token stoken) {
         cv::VideoCapture cap;
         int active_index = CAMERA_INDEX;
 
+        bool opened = false;
+
         if (is_net) {
             std::cout << "[video_capture] Connecting to IP camera: " << source << " ...\n";
             cap.open(source, cv::CAP_FFMPEG);
+            if (cap.isOpened()) {
+                opened = true;
+            } else {
+                std::cerr << "[video_capture] WARNING: IP camera (" << source 
+                          << ") unreachable / connection refused. Checking local camera fallback...\n";
+                // Attempt local V4L2 fallback
+                for (int idx : {0, 1, 2, 3, 4, 5}) {
+                    cap.open(idx, cv::CAP_V4L2);
+                    if (cap.isOpened()) {
+                        active_index = idx;
+                        is_net = false;
+                        opened = true;
+                        std::cout << "[video_capture] ✓ Successfully fell back to local camera /dev/video" 
+                                  << active_index << "\n";
+                        break;
+                    }
+                }
+            }
         } else {
             // Local V4L2 device index
             int requested_index = CAMERA_INDEX;
             try { requested_index = std::stoi(source); } catch (...) {}
 
-            for (int idx : {requested_index, 0, 2, 1, 3, 4, 5}) {
+            for (int idx : {requested_index, 0, 1, 2, 3, 4, 5}) {
                 cap.open(idx, cv::CAP_V4L2);
                 if (cap.isOpened()) {
                     active_index = idx;
+                    opened = true;
                     break;
                 }
             }
         }
 
-        if (!cap.isOpened()) {
+        if (!opened || !cap.isOpened()) {
             std::cerr << "[video_capture] ERROR: cannot open camera source ("
                       << (is_net ? source : ("/dev/video" + std::to_string(active_index)))
                       << "). Retrying in " << RECONNECT_DELAY_MS << "ms...\n";

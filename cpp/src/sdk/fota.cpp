@@ -1,9 +1,7 @@
 #include "senzr/fota.hpp"
 #include "app/updater.hpp"
 
-namespace senzr {
-inline namespace v1 {
-namespace fota {
+namespace senzr::fota {
 
 struct Client::Impl {
     app::UpdaterConfig app_cfg;
@@ -44,15 +42,20 @@ Result<std::optional<ReleaseMetadata>> Client::check_latest() {
 Result<void> Client::update(const std::string& version,
                             bool reboot_on_success,
                             const std::string& direct_url,
-                            uint64_t size_bytes) {
-    if (pimpl_->updater.run_update(version, reboot_on_success, direct_url, size_bytes)) {
+                            uint64_t size_bytes,
+                            const std::string& signature,
+                            bool allow_downgrade) {
+    if (pimpl_->updater.run_update(version, reboot_on_success, direct_url, size_bytes, "", signature, allow_downgrade)) {
         return Result<void>::success();
     }
     return Result<void>(ErrorCode::UpdateFailed, "OTA Update failed for version " + version);
 }
 
 Result<void> Client::rollback() {
-    return Result<void>(ErrorCode::NotSupported, "Manual rollback trigger not implemented; automated rollback occurs on boot health check failure");
+    if (pimpl_->updater.manual_rollback()) {
+        return Result<void>::success();
+    }
+    return Result<void>(ErrorCode::InternalError, "Rollback failed or no valid backup snapshot exists");
 }
 
 std::string Client::get_current_version() const {
@@ -79,6 +82,4 @@ void Client::stop_daemon() {
     pimpl_->updater.stop();
 }
 
-} // namespace fota
-} // namespace v1
-} // namespace senzr
+} // namespace senzr::fota

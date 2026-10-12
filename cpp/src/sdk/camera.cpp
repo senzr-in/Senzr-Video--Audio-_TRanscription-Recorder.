@@ -2,9 +2,7 @@
 #include <filesystem>
 #include <fstream>
 
-namespace senzr {
-inline namespace v1 {
-namespace media {
+namespace senzr::media {
 
 struct CameraManager::Impl {
     std::vector<CameraInfo> cameras;
@@ -65,8 +63,6 @@ CameraManager::CameraManager() : pimpl_(std::make_unique<Impl>()) {
 }
 
 CameraManager::~CameraManager() = default;
-CameraManager::CameraManager(CameraManager&&) noexcept = default;
-CameraManager& CameraManager::operator=(CameraManager&&) noexcept = default;
 
 std::vector<CameraInfo> CameraManager::discover_cameras() {
     pimpl_->refresh_cameras();
@@ -81,6 +77,4 @@ Result<CameraInfo> CameraManager::get_default_camera() {
     return Result<CameraInfo>::success(pimpl_->cameras.front());
 }
 
-} // namespace media
-} // namespace v1
-} // namespace senzr
+} // namespace senzr::media

@@ -79,31 +79,54 @@ std::string MqttAccessClient::get_lan_ip() const {
 
 void MqttAccessClient::init_device_uuid_if_empty() {
     std::lock_guard<std::mutex> lk(config_mutex_);
-    if (!config_.uuid.empty()) return;
 
-    // Try reading hardware MAC address of eth0 / end0 / wlan0
-    for (const char* iface : {"eth0", "end0", "wlan0"}) {
-        std::ifstream f(std::string("/sys/class/net/") + iface + "/address");
-        if (f.is_open()) {
-            std::string mac;
-            if (f >> mac && mac.length() >= 12) {
-                std::string clean_mac;
-                for (char c : mac) {
-                    if (c != ':') clean_mac += static_cast<char>(std::toupper(c));
+    // 1. Resolve UUID if not explicitly set
+    if (config_.uuid.empty()) {
+        bool mac_found = false;
+        for (const char* iface : {"eth0", "end0", "wlan0"}) {
+            std::ifstream f(std::string("/sys/class/net/") + iface + "/address");
+            if (f.is_open()) {
+                std::string mac;
+                if (f >> mac && mac.length() >= 12) {
+                    std::string clean_mac;
+                    for (char c : mac) {
+                        if (c != ':') clean_mac += static_cast<char>(std::toupper(c));
+                    }
+                    config_.uuid = "DEVICE_UUID_" + clean_mac;
+                    mac_found = true;
+                    break;
                 }
-                config_.uuid = "DEVICE_UUID_" + clean_mac;
-                return;
             }
+        }
+        if (!mac_found) {
+            std::string ip = get_lan_ip();
+            std::string clean_ip;
+            for (char c : ip) {
+                if (c != '.') clean_ip += c;
+            }
+            config_.uuid = "DEVICE_UUID_" + clean_ip;
         }
     }
 
-    // Fallback: derive from IP
-    std::string ip = get_lan_ip();
-    std::string clean_ip;
-    for (char c : ip) {
-        if (c != '.') clean_ip += c;
+    // 2. Dynamically resolve actual installed firmware version for handshake connect
+    for (const char* vpath : {
+        "/opt/edge-gateway/version.txt",
+        "/opt/edge-gateway/.version",
+        "/opt/edge-gateway/current/version.txt",
+        "/opt/edge-gateway/current/.version",
+        "version.txt",
+        ".version"
+    }) {
+        std::ifstream vf(vpath);
+        if (vf.is_open()) {
+            std::string ver;
+            if (vf >> ver && !ver.empty()) {
+                config_.app_version = ver;
+                config_.sys_version = ver;
+                break;
+            }
+        }
     }
-    config_.uuid = "DEVICE_UUID_" + clean_ip;
 }
 
 uint64_t MqttAccessClient::get_current_epoch_sec() const {
@@ -301,6 +324,7 @@ bool MqttAccessClient::publish_custom(const std::string& topic, const nlohmann::
 // ─────────────────────────────────────────────────────────────────────────────
 
 bool MqttAccessClient::publish_connect_handshake() {
+    init_device_uuid_if_empty();
     MqttAccessConfig cfg = get_config();
     std::string topic = cfg.prefix + "/event/connect";
 
@@ -463,9 +487,8 @@ void MqttAccessClient::handle_cmd_set_config(const std::string& serial_no, const
         }
     }
 
-    // Send ACK: access_device/v1/cmd/{uuid}/setConfig_reply & access_device/v1/cmd/setConfig_reply
-    std::string reply_topic_scoped = cfg.prefix + "/cmd/" + cfg.uuid + "/setConfig_reply";
-    std::string reply_topic_global = cfg.prefix + "/cmd/setConfig_reply";
+    // Send ACK: access_device/v1/event/{uuid}/setConfig_reply
+    std::string reply_topic_scoped = cfg.prefix + "/event/" + cfg.uuid + "/setConfig_reply";
     json ack = {
         {"serialNo", serial_no.empty() ? generate_serial("cfg_ack") : serial_no},
         {"uuid", cfg.uuid},
@@ -477,7 +500,6 @@ void MqttAccessClient::handle_cmd_set_config(const std::string& serial_no, const
 
     std::cout << "[MQTT-Access] >>> Publishing setConfig_reply to: " << reply_topic_scoped << "\n";
     publish_custom(reply_topic_scoped, ack, 0);
-    publish_custom(reply_topic_global, ack, 0);
 
     if (broker_changed) {
         std::cout << "[MQTT-Access] Broker configuration updated. Reconnecting to new broker...\n";
@@ -510,9 +532,8 @@ void MqttAccessClient::handle_cmd_remote_control(const std::string& serial_no, c
         success = remote_control_handler_(action, door_no, duration_ms);
     }
 
-    // Send ACK: access_device/v1/cmd/{uuid}/remoteControl_reply & access_device/v1/cmd/remoteControl_reply
-    std::string reply_topic_scoped = cfg.prefix + "/cmd/" + cfg.uuid + "/remoteControl_reply";
-    std::string reply_topic_global = cfg.prefix + "/cmd/remoteControl_reply";
+    // Send ACK: access_device/v1/event/{uuid}/remoteControl_reply
+    std::string reply_topic_scoped = cfg.prefix + "/event/" + cfg.uuid + "/remoteControl_reply";
     json ack = {
         {"serialNo", serial_no.empty() ? generate_serial("ctrl_ack") : serial_no},
         {"uuid", cfg.uuid},
@@ -523,7 +544,6 @@ void MqttAccessClient::handle_cmd_remote_control(const std::string& serial_no, c
     };
 
     publish_custom(reply_topic_scoped, ack, 0);
-    publish_custom(reply_topic_global, ack, 0);
 }
 
 void MqttAccessClient::handle_event_connect_reply(const nlohmann::json& payload) {
@@ -539,20 +559,30 @@ void MqttAccessClient::handle_cmd_ota(const std::string& serial_no, const nlohma
 
     std::string version = "";
     std::string url = "";
+    std::string checksum = "";
     bool reboot = false;
     uint64_t size_bytes = 0;
 
+    std::string signature = "";
+    bool allow_downgrade = false;
+
     if (payload.contains("data") && payload["data"].is_object()) {
         const auto& d = payload["data"];
-        version    = d.value("version", "");
-        url        = d.value("url", d.value("downloadUrl", d.value("presigned_url", "")));
-        reboot     = d.value("reboot", false);
-        size_bytes = d.value("size", d.value("size_bytes", 0ULL));
+        version         = d.value("version", "");
+        url             = d.value("url", d.value("downloadUrl", d.value("presigned_url", "")));
+        checksum        = d.value("checksum", d.value("sha256", d.value("md5", "")));
+        signature       = d.value("signature", d.value("sig", ""));
+        allow_downgrade = d.value("allow_downgrade", false);
+        reboot          = d.value("reboot", false);
+        size_bytes      = d.value("size", d.value("size_bytes", 0ULL));
     } else {
-        version    = payload.value("version", "");
-        url        = payload.value("url", payload.value("downloadUrl", payload.value("presigned_url", "")));
-        reboot     = payload.value("reboot", false);
-        size_bytes = payload.value("size", payload.value("size_bytes", 0ULL));
+        version         = payload.value("version", "");
+        url             = payload.value("url", payload.value("downloadUrl", payload.value("presigned_url", "")));
+        checksum        = payload.value("checksum", payload.value("sha256", payload.value("md5", "")));
+        signature       = payload.value("signature", payload.value("sig", ""));
+        allow_downgrade = payload.value("allow_downgrade", false);
+        reboot          = payload.value("reboot", false);
+        size_bytes      = payload.value("size", payload.value("size_bytes", 0ULL));
     }
 
     if (version.empty()) {
@@ -566,14 +596,17 @@ void MqttAccessClient::handle_cmd_ota(const std::string& serial_no, const nlohma
     }
 
     std::cout << "[MQTT-Access] OTA target: version=" << version
-              << ", url=" << url << ", reboot=" << reboot << "\n";
+              << ", url=" << url << ", checksum=" << (checksum.empty() ? "(none)" : checksum)
+              << ", signature=" << (signature.empty() ? "(none)" : "[provided]")
+              << ", allow_downgrade=" << allow_downgrade
+              << ", reboot=" << reboot << "\n";
 
     bool started = false;
     if (ota_update_handler_) {
-        started = ota_update_handler_(version, url, reboot, size_bytes);
+        started = ota_update_handler_(version, url, reboot, size_bytes, checksum, signature, allow_downgrade);
     }
 
-    // Send ACK: access_device/v1/cmd/upgradeFirmware_reply & ota_reply
+    // Send ACK: access_device/v1/event/{uuid}/upgradeFirmware_reply & ota_reply
     json ack = {
         {"serialNo", serial_no.empty() ? generate_serial("ota_ack") : serial_no},
         {"uuid", cfg.uuid},
@@ -586,16 +619,16 @@ void MqttAccessClient::handle_cmd_ota(const std::string& serial_no, const nlohma
         }}
     };
 
-    std::string fw_reply_topic = cfg.prefix + "/cmd/upgradeFirmware_reply";
-    std::string ota_reply_topic = cfg.prefix + "/cmd/ota_reply";
-    std::cout << "[MQTT-Access] >>> Publishing reply to: " << fw_reply_topic << " and " << ota_reply_topic << "\n";
+    std::string fw_reply_topic = cfg.prefix + "/event/" + cfg.uuid + "/upgradeFirmware_reply";
+    std::string ota_reply_topic = cfg.prefix + "/event/" + cfg.uuid + "/ota_reply";
+    std::cout << "[MQTT-Access] >>> Publishing reply to: " << fw_reply_topic << "\n";
     publish_custom(fw_reply_topic, ack, 1);
     publish_custom(ota_reply_topic, ack, 1);
 }
 
 bool MqttAccessClient::publish_ota_status(const std::string& status, const std::string& message, const std::string& version) {
     MqttAccessConfig cfg = get_config();
-    std::string topic = cfg.prefix + "/event/ota_status";
+    std::string topic = cfg.prefix + "/event/" + cfg.uuid + "/ota_status";
     json payload = {
         {"uuid", cfg.uuid},
         {"serialNo", generate_serial("ota_stat")},

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "senzr/export.hpp"
 #include "senzr/types.hpp"
 #include "senzr/error.hpp"
 #include <string>
@@ -8,14 +7,12 @@
 #include <memory>
 #include <functional>
 
-namespace senzr {
-inline namespace v1 {
-namespace fota {
+namespace senzr::fota {
 
 /**
  * @brief Information about a released firmware package.
  */
-struct SENZR_API ReleaseMetadata {
+struct ReleaseMetadata {
     std::string version;
     std::string file_name;
     std::string checksum_sha256;
@@ -28,7 +25,7 @@ using ReleaseInfo = ReleaseMetadata;
 /**
  * @brief Current operational state of the FOTA update engine.
  */
-struct SENZR_API FotaStatus {
+struct FotaStatus {
     std::string current_version;
     std::string target_version;
     std::string state; // "idle", "checking", "downloading", "verifying", "installing", "testing", "success", "failed", "rollback"
@@ -40,7 +37,7 @@ struct SENZR_API FotaStatus {
 /**
  * @brief Configuration parameters for FOTA updates.
  */
-struct SENZR_API FotaConfig {
+struct FotaConfig {
     std::string device_id;
     std::string download_dir{"/opt/edge-gateway/downloads"};
     std::string backup_dir{"/opt/edge-gateway/backup"};
@@ -54,7 +51,7 @@ using Config = FotaConfig;
 /**
  * @brief Client for managing Over-The-Air (FOTA) updates and A/B partition rollbacks.
  */
-class SENZR_API Client {
+class Client {
 public:
     explicit Client(FotaConfig config = {});
     ~Client();
@@ -65,12 +62,14 @@ public:
     Client& operator=(Client&&) noexcept;
 
     // ── Update Lifecycle ──────────────────────────────────────────────────────
-    [[nodiscard]] Result<std::optional<ReleaseMetadata>> check_latest();
-    [[nodiscard]] Result<void> update(const std::string& version,
-                                      bool reboot_on_success = true,
-                                      const std::string& direct_url = "",
-                                      uint64_t size_bytes = 0);
-    [[nodiscard]] Result<void> rollback();
+    Result<std::optional<ReleaseMetadata>> check_latest();
+    Result<void> update(const std::string& version,
+                        bool reboot_on_success = true,
+                        const std::string& direct_url = "",
+                        uint64_t size_bytes = 0,
+                        const std::string& signature = "",
+                        bool allow_downgrade = false);
+    Result<void> rollback();
 
     // ── Inspection & State ────────────────────────────────────────────────────
     [[nodiscard]] std::string get_current_version() const;
@@ -86,6 +85,4 @@ private:
     std::unique_ptr<Impl> pimpl_;
 };
 
-} // namespace fota
-} // namespace v1
-} // namespace senzr
+} // namespace senzr::fota

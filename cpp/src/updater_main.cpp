@@ -1,13 +1,13 @@
-#include "senzr/fota.hpp"
+#include "app/updater.hpp"
 #include <csignal>
 #include <iostream>
 
-static senzr::fota::Client* g_client = nullptr;
+static app::OtaUpdater* g_updater = nullptr;
 
 static void handle_signal(int sig) {
-    if (g_client) {
+    if (g_updater) {
         std::cout << "\nReceived signal " << sig << ", stopping updater...\n";
-        g_client->stop_daemon();
+        g_updater->stop();
     }
 }
 
@@ -15,9 +15,9 @@ int main() {
     std::signal(SIGINT,  handle_signal);
     std::signal(SIGTERM, handle_signal);
 
-    senzr::fota::Client client;
-    g_client = &client;
+    app::OtaUpdater updater;
+    g_updater = &updater;
 
-    client.start_daemon();
+    updater.run();
     return 0;
 }

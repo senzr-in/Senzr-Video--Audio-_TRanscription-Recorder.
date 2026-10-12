@@ -1,0 +1,7 @@
+{
+  "version": "4.1.0",
+  "file": "edge-gateway-v4.1.0.zip",
+  "checksum": "9eb64862028896c1760fe77f57cfde23f7c2ec16d393ad5858b6125754516395",
+  "size_bytes": 1760511,
+  "release_notes": "SenzrOS v4.1.0 Release \u2014 Passwordless Direct Web Upload, Auto-Reboot & Live FOTA Telemetry"
+}

@@ -14,7 +14,6 @@
 #include <unistd.h>
 
 namespace senzr {
-inline namespace v1 {
 
 struct Device::Impl {
     std::mutex mutex;
@@ -39,8 +38,6 @@ struct Device::Impl {
 
 Device::Device() : pimpl_(std::make_unique<Impl>()) {}
 Device::~Device() = default;
-Device::Device(Device&&) noexcept = default;
-Device& Device::operator=(Device&&) noexcept = default;
 
 Device& Device::get_instance() {
     static Device instance;
@@ -132,7 +129,15 @@ std::string Device::get_board_model() {
 }
 
 std::string Device::get_firmware_version() {
-    for (const auto& path : {"/opt/edge-gateway/current/version.txt", "version.txt", "/etc/senzr-version"}) {
+    for (const auto& path : {
+        "/opt/edge-gateway/version.txt",
+        "/opt/edge-gateway/.version",
+        "/opt/edge-gateway/current/version.txt",
+        "/opt/edge-gateway/current/.version",
+        "version.txt",
+        ".version",
+        "/etc/senzr-version"
+    }) {
         if (std::filesystem::exists(path)) {
             std::ifstream f(path);
             std::string v;
@@ -283,5 +288,4 @@ Result<void> Device::control_service(const std::string& action, const std::strin
     return Result<void>::success();
 }
 
-} // namespace v1
 } // namespace senzr

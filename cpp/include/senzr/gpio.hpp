@@ -1,17 +1,13 @@
 #pragma once
 
-#include "senzr/export.hpp"
 #include "senzr/types.hpp"
 #include "senzr/error.hpp"
 #include <string>
-#include <string_view>
 #include <vector>
 #include <optional>
 #include <memory>
 
-namespace senzr {
-inline namespace v1 {
-namespace gpio {
+namespace senzr::gpio {
 
 /**
  * @brief Pin direction configuration.
@@ -34,7 +30,7 @@ using PinState = PinValue;
 /**
  * @brief Information and state for a single hardware pin.
  */
-struct SENZR_API PinInfo {
+struct PinInfo {
     int physical_pin{0};
     int kernel_gpio{0};
     std::string name;
@@ -52,37 +48,37 @@ struct SENZR_API PinInfo {
 /**
  * @brief Thread-safe GPIO Manager for 40-pin header, relay pulsing, and safety beam monitoring.
  */
-class SENZR_API Manager {
+class Manager {
 public:
     static Manager& get_instance();
 
     // ── Low-Level Pin Operations ──────────────────────────────────────────────
-    [[nodiscard]] Result<void> pin_mode(int physical_pin, PinMode mode);
-    [[nodiscard]] Result<void> digital_write(int physical_pin, PinValue value);
-    [[nodiscard]] Result<PinValue> digital_read(int physical_pin);
-    [[nodiscard]] Result<void> toggle(int physical_pin);
+    Result<void> pin_mode(int physical_pin, PinMode mode);
+    Result<void> digital_write(int physical_pin, PinValue value);
+    Result<PinValue> digital_read(int physical_pin);
+    Result<void> toggle(int physical_pin);
 
     // ── Named Pin Aliases ─────────────────────────────────────────────────────
-    [[nodiscard]] Result<void> define_alias(const std::string& alias, int physical_pin);
-    [[nodiscard]] Result<void> write_alias(const std::string& alias, PinValue value);
-    [[nodiscard]] Result<PinValue> read_alias(const std::string& alias);
+    Result<void> define_alias(const std::string& alias, int physical_pin);
+    Result<void> write_alias(const std::string& alias, PinValue value);
+    Result<PinValue> read_alias(const std::string& alias);
 
     // ── High-Level Access Control Actions (Non-blocking) ──────────────────────
-    [[nodiscard]] Result<void> pulse(int physical_pin, int duration_ms = 3000, PinValue active_level = PinValue::High);
-    [[nodiscard]] Result<void> pulse_alias(const std::string& alias, int duration_ms = 3000, PinValue active_level = PinValue::High);
-    [[nodiscard]] Result<void> cancel_pulse(int physical_pin);
-    [[nodiscard]] Result<void> buzzer_beep(int physical_pin, int count = 2, int on_ms = 100, int off_ms = 100);
+    Result<void> pulse(int physical_pin, int duration_ms = 3000, PinValue active_level = PinValue::High);
+    Result<void> pulse_alias(const std::string& alias, int duration_ms = 3000, PinValue active_level = PinValue::High);
+    Result<void> cancel_pulse(int physical_pin);
+    Result<void> buzzer_beep(int physical_pin, int count = 2, int on_ms = 100, int off_ms = 100);
 
     // ── Safety Beam Interlock & Debounce ──────────────────────────────────────
-    [[nodiscard]] Result<void> emergency_disarm(int relay_pin = 7);
+    Result<void> emergency_disarm(int relay_pin = 7);
     void start_safety_monitor(int safety_sensor_pin = 15, int relay_pin = 7);
     void stop_safety_monitor();
-    [[nodiscard]] bool is_safety_tripped() const;
-    [[nodiscard]] Result<PinValue> digital_read_debounced(int physical_pin, int debounce_ms = 50);
+    bool is_safety_tripped() const;
+    Result<PinValue> digital_read_debounced(int physical_pin, int debounce_ms = 50);
 
     // ── Inspection & State Queries ────────────────────────────────────────────
-    [[nodiscard]] std::vector<PinInfo> get_all_pins() const;
-    [[nodiscard]] std::optional<PinInfo> get_pin_info(int physical_pin) const;
+    std::vector<PinInfo> get_all_pins() const;
+    std::optional<PinInfo> get_pin_info(int physical_pin) const;
 
     // Backward compatibility helper
     static Manager& instance() { return get_instance(); }
@@ -96,23 +92,18 @@ public:
         return digital_write(physical_pin, val).has_value();
     }
 
+private:
+    Manager();
     ~Manager();
     Manager(const Manager&) = delete;
     Manager& operator=(const Manager&) = delete;
-    Manager(Manager&&) noexcept;
-    Manager& operator=(Manager&&) noexcept;
-
-private:
-    Manager();
 
     struct Impl;
     std::unique_ptr<Impl> pimpl_;
 };
 
-[[nodiscard]] inline Manager& get_manager() {
+inline Manager& get_manager() {
     return Manager::get_instance();
 }
 
-} // namespace gpio
-} // namespace v1
-} // namespace senzr
+} // namespace senzr::gpio

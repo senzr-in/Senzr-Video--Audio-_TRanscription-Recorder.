@@ -1,15 +1,12 @@
 #pragma once
 
-#include "senzr/export.hpp"
 #include "senzr/types.hpp"
 #include <string>
 #include <string_view>
 #include <functional>
 #include <memory>
 
-namespace senzr {
-inline namespace v1 {
-namespace log {
+namespace senzr::log {
 
 /**
  * @brief Standardized log severity levels.
@@ -30,20 +27,21 @@ enum class Level {
 using LogHandler = std::function<void(Level level, std::string_view tag, std::string_view message)>;
 
 /**
- * @brief Configures SDK global logging behavior. Thread-safe.
+ * @brief Configures SDK global logging behavior.
+ * Thread-safe.
  */
-SENZR_API void set_level(Level level) noexcept;
-[[nodiscard]] SENZR_API Level get_level() noexcept;
+void set_level(Level level) noexcept;
+[[nodiscard]] Level get_level() noexcept;
 
 /**
  * @brief Registers a custom log handler (e.g. for syslog, systemd journal, or file sink).
  */
-SENZR_API void set_handler(LogHandler handler);
+void set_handler(LogHandler handler);
 
 /**
  * @brief Internal log dispatcher.
  */
-SENZR_API void write(Level level, std::string_view tag, std::string_view message);
+void write(Level level, std::string_view tag, std::string_view message);
 
 // Convenience logging functions
 inline void trace(std::string_view tag, std::string_view message) { write(Level::Trace, tag, message); }
@@ -53,6 +51,4 @@ inline void warn(std::string_view tag, std::string_view message)  { write(Level:
 inline void error(std::string_view tag, std::string_view message) { write(Level::Error, tag, message); }
 inline void fatal(std::string_view tag, std::string_view message) { write(Level::Fatal, tag, message); }
 
-} // namespace log
-} // namespace v1
-} // namespace senzr
+} // namespace senzr::log

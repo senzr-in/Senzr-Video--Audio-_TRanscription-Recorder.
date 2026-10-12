@@ -1,9 +1,7 @@
 #include "senzr/watchdog.hpp"
 #include "app/watchdog_supervisor.hpp"
 
-namespace senzr {
-inline namespace v1 {
-namespace watchdog {
+namespace senzr::watchdog {
 
 struct Supervisor::Impl {
     app::WatchdogSupervisor& backend{app::WatchdogSupervisor::instance()};
@@ -13,8 +11,6 @@ struct Supervisor::Impl {
 
 Supervisor::Supervisor() : pimpl_(std::make_unique<Impl>()) {}
 Supervisor::~Supervisor() = default;
-Supervisor::Supervisor(Supervisor&&) noexcept = default;
-Supervisor& Supervisor::operator=(Supervisor&&) noexcept = default;
 
 Supervisor& Supervisor::get_instance() {
     static Supervisor inst;
@@ -49,6 +45,4 @@ int Supervisor::get_timeout_seconds() const noexcept {
     return pimpl_->timeout_sec;
 }
 
-} // namespace watchdog
-} // namespace v1
-} // namespace senzr
+} // namespace senzr::watchdog

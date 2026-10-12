@@ -1,6 +1,5 @@
 #pragma once
 
-#include "senzr/export.hpp"
 #include "senzr/types.hpp"
 #include "senzr/error.hpp"
 #include "senzr/ai/types.hpp"
@@ -8,14 +7,12 @@
 #include <vector>
 #include <memory>
 
-namespace senzr {
-inline namespace v1 {
-namespace ai {
+namespace senzr::ai {
 
 /**
  * @brief YOLOv8 NPU inference configuration.
  */
-struct SENZR_API PersonDetectorConfig {
+struct PersonDetectorConfig {
     std::string model_path{"models/yolov8n.rknn"};
     float confidence_threshold{0.45f};
     float nms_threshold{0.45f};
@@ -25,9 +22,9 @@ struct SENZR_API PersonDetectorConfig {
 };
 
 /**
- * @brief Hardware-accelerated YOLOv8 Person Detector utilizing the Rockchip RK3588 NPU.
+ * @brief Hardware-accelerated YOLOv8 Person Detector utilizing the Rockchip RK3588 6 TOPS NPU.
  */
-class SENZR_API PersonDetector {
+class PersonDetector {
 public:
     explicit PersonDetector(PersonDetectorConfig config = {});
     ~PersonDetector();
@@ -38,18 +35,16 @@ public:
     PersonDetector& operator=(PersonDetector&&) noexcept;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
-    [[nodiscard]] Result<void> initialize();
+    Result<void> initialize();
     [[nodiscard]] bool is_initialized() const noexcept;
     void close();
 
     // ── Inference ─────────────────────────────────────────────────────────────
-    [[nodiscard]] Result<std::vector<Detection>> detect(const FrameView& frame);
+    Result<std::vector<Detection>> detect(const FrameView& frame);
 
 private:
     struct Impl;
     std::unique_ptr<Impl> pimpl_;
 };
 
-} // namespace ai
-} // namespace v1
-} // namespace senzr
+} // namespace senzr::ai

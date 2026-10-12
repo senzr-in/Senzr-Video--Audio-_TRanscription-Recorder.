@@ -4,7 +4,6 @@
 #include <nlohmann/json.hpp>
 
 namespace senzr {
-inline namespace v1 {
 
 struct Storage::Impl {
     StorageConfig config;
@@ -118,5 +117,4 @@ Result<void> Storage::vacuum_old_records(int keep_days) {
     return Result<void>(ErrorCode::StorageError, "Failed to vacuum old database records");
 }
 
-} // namespace v1
 } // namespace senzr

@@ -2,15 +2,20 @@
 Description=Senzr Edge Gateway Production Daemon
 After=network-online.target time-sync.target
 Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=4
+OnFailure=edge-gateway-rollback.service
 
 [Service]
 Type=simple
-User=orangepi
+User=root
 WorkingDirectory=/home/orangepi/edge-gateway/cpp/build
 ExecStart=/home/orangepi/edge-gateway/cpp/build/edge-gateway-backend
-Restart=always
+Restart=on-failure
 RestartSec=2
 LimitNOFILE=65535
+StandardOutput=journal+console
+StandardError=journal+console
 
 [Install]
 WantedBy=multi-user.target

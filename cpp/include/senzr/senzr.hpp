@@ -2,9 +2,9 @@
 
 /**
  * @file senzr.hpp
- * @brief Senzr Edge OS C++ SDK — libsenzr Master Umbrella Public Header
+ * @brief Senzr OS C++ SDK — libsenzr Master Umbrella Public Header
  *
- * Commercial-grade embedded platform SDK for the Senzr device ecosystem.
+ * Enterprise-grade embedded platform SDK for the Senzr device ecosystem.
  * Targets the Rockchip RK3588/RK3588S SoC and Linux-based edge appliances.
  *
  * Compatible hardware:
@@ -27,12 +27,11 @@
  *   - senzr::ble::Manager        - Bluetooth Low Energy peripheral and provisioning
  *   - senzr::fota::Client        - Dual-slot A/B FOTA updates and recovery
  *   - senzr::mqtt::Client        - Bi-directional MQTTS cloud telemetry & downlinks
- *   - senzr::ai::PersonDetector  - YOLOv8 RK3588 NPU person detection
- *   - senzr::ai::AnprEngine      - Automatic Number Plate Recognition (Indian HSRP & Bharat series)
+ *   - senzr::ai::Detector        - Hardware-accelerated YOLO11s / YOLOv8 Traffic, Emergency & ANPR Detector
+ *   - senzr::ai::AnprEngine      - MoRTH Indian & Bharat license plate OCR normalization
  *   - senzr::media::Recorder     - Event-driven video recording engine
  */
 
-#include "senzr/export.hpp"
 #include "senzr/types.hpp"
 #include "senzr/platform.hpp"
 #include "senzr/error.hpp"
@@ -48,6 +47,7 @@
 #include "senzr/mqtt/client.hpp"
 #include "senzr/ai/types.hpp"
 #include "senzr/ai/inference.hpp"
+#include "senzr/ai/detector.hpp"
 #include "senzr/ai/person_detector.hpp"
 #include "senzr/ai/anpr.hpp"
 #include "senzr/media/camera.hpp"

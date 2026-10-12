@@ -1,20 +1,17 @@
 #pragma once
 
-#include "senzr/export.hpp"
 #include "senzr/types.hpp"
 #include "senzr/error.hpp"
 #include <string>
 #include <memory>
 #include <functional>
 
-namespace senzr {
-inline namespace v1 {
-namespace ble {
+namespace senzr::ble {
 
 /**
  * @brief Bluetooth Low Energy (BLE) peripheral configuration.
  */
-struct SENZR_API BleConfig {
+struct BleConfig {
     std::string device_name{"Senzr-Edge"};
     std::string service_uuid{"0000ffff-0000-1000-8000-00805f9b34fb"};
     bool auto_advertise{true};
@@ -23,7 +20,7 @@ struct SENZR_API BleConfig {
 /**
  * @brief Operational state of BLE peripheral.
  */
-struct SENZR_API BleStatus {
+struct BleStatus {
     bool is_advertising{false};
     bool is_connected{false};
     std::string peer_address;
@@ -33,14 +30,14 @@ struct SENZR_API BleStatus {
 /**
  * @brief Thread-safe Bluetooth Low Energy (BLE) Access and Provisioning Manager.
  */
-class SENZR_API Manager {
+class Manager {
 public:
     static Manager& get_instance();
 
     // ── BLE Lifecycle ─────────────────────────────────────────────────────────
-    [[nodiscard]] Result<void> initialize(const BleConfig& config = {});
-    [[nodiscard]] Result<void> start_advertising();
-    [[nodiscard]] Result<void> stop_advertising();
+    Result<void> initialize(const BleConfig& config = {});
+    Result<void> start_advertising();
+    Result<void> stop_advertising();
 
     // ── State Queries ─────────────────────────────────────────────────────────
     [[nodiscard]] BleStatus get_status() const;
@@ -50,14 +47,11 @@ public:
     // Backward-compatibility alias
     static Manager& instance() { return get_instance(); }
 
+private:
+    Manager();
     ~Manager();
     Manager(const Manager&) = delete;
     Manager& operator=(const Manager&) = delete;
-    Manager(Manager&&) noexcept;
-    Manager& operator=(Manager&&) noexcept;
-
-private:
-    Manager();
 
     struct Impl;
     std::unique_ptr<Impl> pimpl_;
@@ -65,10 +59,8 @@ private:
 
 using AccessManager = Manager;
 
-[[nodiscard]] inline Manager& get_manager() {
+inline Manager& get_manager() {
     return Manager::get_instance();
 }
 
-} // namespace ble
-} // namespace v1
-} // namespace senzr
+} // namespace senzr::ble

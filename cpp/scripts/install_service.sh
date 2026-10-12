@@ -18,7 +18,12 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-# 1. Copy service unit to systemd directory
+# 1. Ensure binary execute permissions
+if [[ -f "/home/orangepi/edge-gateway/cpp/build/edge-gateway-backend" ]]; then
+    chmod +x /home/orangepi/edge-gateway/cpp/build/edge-gateway-backend
+fi
+
+# 2. Copy service unit to systemd directory
 echo "[1/4] Copying service configuration to ${SERVICE_DEST}..."
 cp -f "${SERVICE_SRC}" "${SERVICE_DEST}"
 chmod 644 "${SERVICE_DEST}"

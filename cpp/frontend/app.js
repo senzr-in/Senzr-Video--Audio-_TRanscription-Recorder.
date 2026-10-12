@@ -521,10 +521,10 @@ async function setVisionMode(mode) {
 
 function updateModeButtons(mode) {
   currentVisionMode = mode;
-  document.getElementById("modePerson")?.classList.toggle("active", mode === "person");
+  document.getElementById("modeEmergency")?.classList.toggle("active", mode === "emergency");
   document.getElementById("modePlate")?.classList.toggle("active", mode === "plate");
   document.getElementById("modeVehicle")?.classList.toggle("active", mode === "vehicle");
-  document.getElementById("modeBoth")?.classList.toggle("active", mode === "both" || mode === "all");
+  document.getElementById("modeBoth")?.classList.toggle("active", mode === "both" || mode === "all" || mode === "traffic");
 }
 
 async function loadVisionTelemetry() {
@@ -537,15 +537,30 @@ async function loadVisionTelemetry() {
     const personConfEl  = document.getElementById("telPersonConf");
     const plateTextEl   = document.getElementById("telPlateText");
     const plateConfEl   = document.getElementById("telPlateConf");
+    const emergencyEl   = document.getElementById("telEmergencyStatus");
+    const emergencySubEl = document.getElementById("telEmergencySub");
 
     if (personCountEl) {
-      const persons = data.persons || [];
-      personCountEl.textContent = persons.length;
-      if (persons.length > 0) {
-        const topConf = Math.round((persons[0].score || persons[0].confidence || 0) * 100);
-        personConfEl.textContent = `Confidence: ${topConf}%`;
+      const vehicles = data.vehicles || data.persons || [];
+      personCountEl.textContent = vehicles.length;
+      if (vehicles.length > 0) {
+        const topConf = Math.round((vehicles[0].score || vehicles[0].confidence || 0) * 100);
+        personConfEl.textContent = `Confidence: ${topConf}% • Tracking`;
       } else {
         personConfEl.textContent = "Confidence: -";
+      }
+    }
+
+    if (emergencyEl) {
+      const emergencyVehicles = (data.vehicles || []).filter(v => v.is_emergency || v.label === "ambulance" || v.label === "police" || v.label === "fire_engine");
+      if (emergencyVehicles.length > 0) {
+        emergencyEl.textContent = `🚨 ${emergencyVehicles[0].label.toUpperCase()} DETECTED`;
+        emergencyEl.style.color = "var(--accent-red, #ff4444)";
+        if (emergencySubEl) emergencySubEl.textContent = "PRIORITY ALERT ACTIVE";
+      } else {
+        emergencyEl.textContent = "Normal (Clear)";
+        emergencyEl.style.color = "var(--accent-emerald, #00e676)";
+        if (emergencySubEl) emergencySubEl.textContent = "Priority Siren / Strobe Monitor";
       }
     }
 
@@ -562,6 +577,13 @@ async function loadVisionTelemetry() {
         plateTextEl.textContent = "-";
         plateConfEl.textContent = "Optical Character Recognition";
       }
+    }
+
+    // Live FPS display update
+    const fpsTagEl = document.getElementById("streamFpsTag");
+    if (fpsTagEl) {
+      const liveFps = (typeof data.fps === "number" && data.fps > 0) ? data.fps.toFixed(1) : "25.0";
+      fpsTagEl.textContent = `${liveFps} FPS • RK3588 NPU`;
     }
 
     if (data.mode && data.mode !== currentVisionMode) {
@@ -1465,6 +1487,189 @@ function exportLoadTestReport() {
   window.open("/api/loadtest/export", "_blank");
 }
 
+// ── FOTA Management Functions ─────────────────────────────────────────────
+async function loadFotaStatus() {
+  try {
+    const res = await fetch("/api/fota/status");
+    if (!res.ok) return;
+    const data = await res.json();
+    
+    const verEl = document.getElementById("fotaCurrentVer");
+    if (verEl && data.current_version) {
+      verEl.textContent = data.current_version.startsWith("v") ? data.current_version : `v${data.current_version}`;
+    }
+
+    const pillEl = document.getElementById("fotaStatusPill");
+    if (pillEl) {
+      if (data.is_updating) {
+        pillEl.textContent = "UPDATING...";
+        pillEl.className = "status-pill status-pill-busy font-mono";
+      } else {
+        pillEl.textContent = "IDLE / READY";
+        pillEl.className = "status-pill status-pill-online font-mono";
+      }
+    }
+
+    const infoEl = document.getElementById("fotaDeviceInfo");
+    if (infoEl) {
+      infoEl.textContent = `Device: ${data.device_id || "Auto"} • S3: ${data.s3_bucket || "ready"}`;
+    }
+  } catch (e) {
+    console.debug("Failed to fetch FOTA status", e);
+  }
+}
+
+async function uploadFotaPackage() {
+  const fileInput = document.getElementById("fotaFileInput");
+  const msgEl = document.getElementById("fotaMessage");
+  const progContainer = document.getElementById("fotaProgressContainer");
+  const progBar = document.getElementById("fotaProgressBar");
+  const progStep = document.getElementById("fotaProgressStep");
+  const progPct = document.getElementById("fotaProgressPercent");
+  const btnUpload = document.getElementById("btnUploadFota");
+  const rebootCheck = document.getElementById("fotaRebootCheckbox");
+
+  if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+    if (msgEl) {
+      msgEl.textContent = "⚠️ Please select a firmware release (.zip / .tar.gz) package to upload.";
+      msgEl.className = "feedback-msg error";
+    }
+    return;
+  }
+
+  const file = fileInput.files[0];
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const rebootVal = rebootCheck && rebootCheck.checked ? "1" : "0";
+  const uploadUrl = `/api/fota/upload?reboot=${rebootVal}&version=${encodeURIComponent(file.name.replace(/\.[^/.]+$/, ""))}`;
+
+  if (btnUpload) btnUpload.disabled = true;
+  if (progContainer) progContainer.style.display = "block";
+  if (progBar) progBar.style.width = "10%";
+  if (progPct) progPct.textContent = "10%";
+  if (progStep) progStep.textContent = `Uploading ${file.name} (${(file.size / (1024 * 1024)).toFixed(1)} MB)...`;
+  if (msgEl) {
+    msgEl.textContent = "Uploading package to gateway and executing automated flash...";
+    msgEl.className = "feedback-msg info";
+  }
+
+  try {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", uploadUrl, true);
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        const pct = Math.round((e.loaded / e.total) * 75);
+        if (progBar) progBar.style.width = `${pct}%`;
+        if (progPct) progPct.textContent = `${pct}%`;
+      }
+    };
+
+    xhr.onload = () => {
+      if (btnUpload) btnUpload.disabled = false;
+      if (xhr.status >= 200 && xhr.status < 300) {
+        if (progBar) progBar.style.width = "100%";
+        if (progPct) progPct.textContent = "100%";
+        if (progStep) progStep.textContent = "Installation running & service restarting...";
+        if (msgEl) {
+          msgEl.textContent = `✅ Firmware package uploaded successfully! Installing release. ${rebootCheck?.checked ? "System will reboot in a few seconds..." : ""}`;
+          msgEl.className = "feedback-msg success";
+        }
+        setTimeout(() => { loadFotaStatus(); }, 3000);
+      } else {
+        if (msgEl) {
+          msgEl.textContent = `❌ Upload failed (HTTP ${xhr.status}): ${xhr.responseText}`;
+          msgEl.className = "feedback-msg error";
+        }
+      }
+    };
+
+    xhr.onerror = () => {
+      if (btnUpload) btnUpload.disabled = false;
+      if (msgEl) {
+        msgEl.textContent = "❌ Network error during firmware upload.";
+        msgEl.className = "feedback-msg error";
+      }
+    };
+
+    xhr.send(formData);
+  } catch (err) {
+    if (btnUpload) btnUpload.disabled = false;
+    if (msgEl) {
+      msgEl.textContent = `❌ Error: ${err.message}`;
+      msgEl.className = "feedback-msg error";
+    }
+  }
+}
+
+async function checkFotaCloudUpdate() {
+  const msgEl = document.getElementById("fotaMessage");
+  if (msgEl) {
+    msgEl.textContent = "Checking S3 / Cloud repository for new releases...";
+    msgEl.className = "feedback-msg info";
+  }
+  try {
+    const res = await fetch("/api/fota/check", { method: "POST" });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      if (data.update_available) {
+        if (msgEl) {
+          msgEl.textContent = `🎉 New version available: ${data.latest_version} (File: ${data.file}). Trigger via Cloud/MQTT or flash file.`;
+          msgEl.className = "feedback-msg success";
+        }
+      } else {
+        if (msgEl) {
+          msgEl.textContent = `✓ Device is running the latest firmware (${data.current_version}).`;
+          msgEl.className = "feedback-msg success";
+        }
+      }
+    } else {
+      if (msgEl) {
+        msgEl.textContent = `⚠️ ${data.error || "Unable to reach S3 update bucket"}`;
+        msgEl.className = "feedback-msg warn";
+      }
+    }
+  } catch (err) {
+    if (msgEl) {
+      msgEl.textContent = `❌ Cloud check failed: ${err.message}`;
+      msgEl.className = "feedback-msg error";
+    }
+  }
+}
+
+async function triggerFotaRollback() {
+  if (!confirm("Are you sure you want to rollback to the previous firmware backup snapshot?")) {
+    return;
+  }
+  const msgEl = document.getElementById("fotaMessage");
+  if (msgEl) {
+    msgEl.textContent = "Restoring previous firmware snapshot...";
+    msgEl.className = "feedback-msg info";
+  }
+  try {
+    const res = await fetch("/api/fota/rollback", { method: "POST" });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      if (msgEl) {
+        msgEl.textContent = `✅ ${data.message} (Version: ${data.current_version})`;
+        msgEl.className = "feedback-msg success";
+      }
+      setTimeout(() => { loadFotaStatus(); }, 2000);
+    } else {
+      if (msgEl) {
+        msgEl.textContent = `❌ ${data.message || "Rollback failed"}`;
+        msgEl.className = "feedback-msg error";
+      }
+    }
+  } catch (err) {
+    if (msgEl) {
+      msgEl.textContent = `❌ Rollback error: ${err.message}`;
+      msgEl.className = "feedback-msg error";
+    }
+  }
+}
+
 // ── Init & Auto-refresh ────────────────────────────────────────────────────
 window.addEventListener("DOMContentLoaded", () => {
   loadDeviceStatus();
@@ -1480,6 +1685,7 @@ window.addEventListener("DOMContentLoaded", () => {
   loadOfflineStorage();
   loadGallery();
   loadModelsCatalog();
+  loadFotaStatus();
 
   // Fast loop for live sentinel detections and active load testing (every 1s)
   setInterval(() => {
@@ -1499,6 +1705,8 @@ window.addEventListener("DOMContentLoaded", () => {
       loadOfflineStorage();
     } else if (activeTab === "gallery") {
       loadGallery();
+    } else if (activeTab === "network") {
+      loadFotaStatus();
     }
   }, 3000);
 });

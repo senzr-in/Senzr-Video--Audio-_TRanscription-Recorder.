@@ -1,12 +1,10 @@
 #pragma once
 
-#include "senzr/export.hpp"
 #include <string>
 #include <vector>
 #include <cstdint>
 
 namespace senzr {
-inline namespace v1 {
 
 /**
  * @brief Supported target edge computing hardware platforms.
@@ -42,7 +40,7 @@ enum class Capability {
  */
 enum class AcceleratorType {
     None = 0,
-    RockchipNpu,     // Rockchip RK3588 3-Core NPU (up to 6.0 TOPS INT8 peak aggregate)
+    RockchipNpu,     // Rockchip RK3588 3-Core NPU (6 TOPS peak)
     NvidiaGpuCuda,   // NVIDIA Maxwell 128 CUDA Core GPU (Jetson Nano)
     CpuFallback
 };
@@ -50,7 +48,7 @@ enum class AcceleratorType {
 /**
  * @brief Detailed accelerator hardware specification.
  */
-struct SENZR_API AcceleratorInfo {
+struct AcceleratorInfo {
     AcceleratorType type{AcceleratorType::None};
     std::string name;
     int core_count{0};
@@ -61,7 +59,7 @@ struct SENZR_API AcceleratorInfo {
 /**
  * @brief Comprehensive platform environment and capabilities profile.
  */
-struct SENZR_API PlatformInfo {
+struct PlatformInfo {
     Platform platform{Platform::Unknown};
     std::string platform_name;
     std::string architecture;
@@ -75,22 +73,13 @@ struct SENZR_API PlatformInfo {
 };
 
 /**
- * @brief Convert a Platform enum value to human-readable string reporting exact architecture.
+ * @brief Convert a Platform enum value to human-readable string.
  */
-[[nodiscard]] inline const char* platform_to_string(Platform p) noexcept {
+inline const char* platform_to_string(Platform p) {
     switch (p) {
-        case Platform::RockchipRK3588:  return "Rockchip RK3588 / RK3588S (aarch64)";
-        case Platform::NvidiaJetsonNano: return "NVIDIA Jetson Nano (aarch64)";
-        case Platform::GenericLinux:
-#if defined(__aarch64__) || defined(_M_ARM64)
-            return "Generic Linux (aarch64)";
-#elif defined(__x86_64__) || defined(_M_X64)
-            return "Generic Linux (x86_64)";
-#elif defined(__arm__) || defined(_M_ARM)
-            return "Generic Linux (armv7l)";
-#else
-            return "Generic Linux";
-#endif
+        case Platform::RockchipRK3588:  return "Rockchip RK3588 / RK3588S";
+        case Platform::NvidiaJetsonNano: return "NVIDIA Jetson Nano";
+        case Platform::GenericLinux:     return "Generic Linux (Host/ARM64)";
         default:                         return "Unknown Platform";
     }
 }
@@ -98,7 +87,7 @@ struct SENZR_API PlatformInfo {
 /**
  * @brief Convert a Capability enum value to human-readable string.
  */
-[[nodiscard]] inline const char* capability_to_string(Capability c) noexcept {
+inline const char* capability_to_string(Capability c) {
     switch (c) {
         case Capability::Gpu:                  return "GPU";
         case Capability::Npu:                  return "NPU";
@@ -117,5 +106,4 @@ struct SENZR_API PlatformInfo {
     }
 }
 
-} // namespace v1
 } // namespace senzr

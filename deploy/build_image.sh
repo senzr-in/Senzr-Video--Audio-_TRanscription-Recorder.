@@ -133,6 +133,7 @@ mkdir -p "${INSTALL_ROOT}/downloads" \
 # Copy Systemd services
 cp "${SCRIPT_DIR}/systemd/edge-gateway.service" "${MOUNT_DIR}/etc/systemd/system/"
 cp "${SCRIPT_DIR}/systemd/edge-gateway-updater.service" "${MOUNT_DIR}/etc/systemd/system/"
+cp "${SCRIPT_DIR}/systemd/edge-gateway-rollback.service" "${MOUNT_DIR}/etc/systemd/system/"
 
 # Copy Network configs
 mkdir -p "${MOUNT_DIR}/etc/hostapd" "${MOUNT_DIR}/etc/dnsmasq.d" "${MOUNT_DIR}/etc/nginx/sites-available"

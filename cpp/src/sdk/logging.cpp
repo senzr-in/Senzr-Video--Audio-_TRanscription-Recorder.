@@ -6,9 +6,7 @@
 #include <iomanip>
 #include <sstream>
 
-namespace senzr {
-inline namespace v1 {
-namespace log {
+namespace senzr::log {
 
 namespace {
     std::atomic<Level> g_log_level{Level::Info};
@@ -66,6 +64,4 @@ void write(Level level, std::string_view tag, std::string_view message) {
               << tag << "] " << message << std::endl;
 }
 
-} // namespace log
-} // namespace v1
-} // namespace senzr
+} // namespace senzr::log

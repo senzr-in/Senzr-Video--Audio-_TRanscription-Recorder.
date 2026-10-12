@@ -1,13 +1,16 @@
 [Unit]
 Description=Edge Gateway C++ Core Service
 After=network.target nginx.service
+StartLimitIntervalSec=60
+StartLimitBurst=4
+OnFailure=edge-gateway-rollback.service
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=/opt/edge-gateway
 ExecStart=/opt/edge-gateway/bin/edge-gateway-backend
-Restart=always
+Restart=on-failure
 RestartSec=3
 KillMode=process
 

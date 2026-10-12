@@ -151,9 +151,13 @@ edge-gateway-framework/
 
 ---
 
-## Setup (High-Level)
+## Setup & Linux Deployment
 
-> Full step-by-step hardware and software setup instructions are maintained separately due to length.
+> 📖 **Complete Linux Guide:** For full step-by-step installation, dependency compilation, camera/NPU configuration, systemd services, and production deployment, refer to the [**Linux Setup & Guide Steps**](file:///f:/PI5MAX/LINUX_SETUP_GUIDE.md).
+>
+> 🚀 **Quick SSH Build Guide:** For quick on-board SSH compile and run instructions, see [**BUILD_INSTRUCTIONS.md**](file:///f:/PI5MAX/BUILD_INSTRUCTIONS.md).
+
+### High-Level Setup Summary:
 
 1. Flash Orange Pi 5 Max with a supported Linux image.
 2. Install Python 3.10 (required for `rknn-toolkit-lite2` compatibility) via `altinstall`, alongside the system Python.

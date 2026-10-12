@@ -12,8 +12,9 @@ inline const std::filesystem::path MODEL_PATH =
     "/opt/edge-gateway/current/backend/models/yolov8.rknn";
 
 // ── Camera ────────────────────────────────────────────────────────────────────
+// Default to local camera (0 / /dev/video0); supports runtime RTSP override or auto-fallback
 inline constexpr int         CAMERA_INDEX        = 0;
-inline const std::string     CAMERA_SOURCE       = "rtsp://admin:admin123@192.168.39.202:554/live?profile=Profile_0000";
+inline const std::string     CAMERA_SOURCE       = "0";
 inline constexpr int         FRAME_WIDTH         = 640;
 inline constexpr int         FRAME_HEIGHT        = 480;
 inline constexpr double      FPS                 = 20.0;

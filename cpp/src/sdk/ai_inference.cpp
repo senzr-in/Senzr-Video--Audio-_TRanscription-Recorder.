@@ -6,9 +6,7 @@
 #include <vector>
 #include <numeric>
 
-namespace senzr {
-inline namespace v1 {
-namespace ai {
+namespace senzr::ai {
 
 // ── Tensor Implementation ────────────────────────────────────────────────────
 
@@ -157,6 +155,4 @@ const InferenceConfig& InferenceEngine::get_config() const {
     return pimpl_->config;
 }
 
-} // namespace ai
-} // namespace v1
-} // namespace senzr
+} // namespace senzr::ai

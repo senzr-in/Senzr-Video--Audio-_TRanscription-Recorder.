@@ -42,6 +42,10 @@ static void ensure_systemd_service_installed() {
 }
 
 int main() {
+    // Force unbuffered stdout/stderr so logs appear in real-time in systemd & journalctl
+    setvbuf(stdout, nullptr, _IONBF, 0);
+    setvbuf(stderr, nullptr, _IONBF, 0);
+
     std::string ver = senzr::Device::get_instance().get_firmware_version();
     std::cout << "\n======================================================\n";
     std::cout << "  🚀 SENZR EDGE GATEWAY STARTING (v" << ver << ")\n";

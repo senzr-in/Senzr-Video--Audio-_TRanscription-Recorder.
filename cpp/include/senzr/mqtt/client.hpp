@@ -1,6 +1,5 @@
 #pragma once
 
-#include "senzr/export.hpp"
 #include "senzr/types.hpp"
 #include "senzr/error.hpp"
 #include <string>
@@ -8,9 +7,7 @@
 #include <functional>
 #include <memory>
 
-namespace senzr {
-inline namespace v1 {
-namespace mqtt {
+namespace senzr::mqtt {
 
 /**
  * @brief MQTT Quality of Service levels.
@@ -24,7 +21,7 @@ enum class QoS {
 /**
  * @brief Secure MQTT connection parameters.
  */
-struct SENZR_API MqttConfig {
+struct MqttConfig {
     std::string broker_host;
     int broker_port{8883}; // Default to MQTTS with TLS
     std::string client_id;
@@ -40,7 +37,7 @@ struct SENZR_API MqttConfig {
 /**
  * @brief Normalized MQTT message packet.
  */
-struct SENZR_API MqttMessage {
+struct MqttMessage {
     std::string topic;
     std::string payload;
     QoS qos{QoS::AtLeastOnce};
@@ -50,7 +47,7 @@ struct SENZR_API MqttMessage {
 /**
  * @brief Thread-safe, secure IoT MQTT Client with automatic reconnection and TLS support.
  */
-class SENZR_API Client {
+class Client {
 public:
     explicit Client(MqttConfig config);
     ~Client();
@@ -61,14 +58,14 @@ public:
     Client& operator=(Client&&) noexcept;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
-    [[nodiscard]] Result<void> connect();
-    [[nodiscard]] Result<void> disconnect();
+    Result<void> connect();
+    Result<void> disconnect();
     [[nodiscard]] bool is_connected() const noexcept;
 
     // ── Messaging ─────────────────────────────────────────────────────────────
-    [[nodiscard]] Result<void> publish(const std::string& topic, const std::string& payload, QoS qos = QoS::AtLeastOnce);
-    [[nodiscard]] Result<void> subscribe(const std::string& topic, QoS qos = QoS::AtLeastOnce);
-    [[nodiscard]] Result<void> unsubscribe(const std::string& topic);
+    Result<void> publish(const std::string& topic, const std::string& payload, QoS qos = QoS::AtLeastOnce);
+    Result<void> subscribe(const std::string& topic, QoS qos = QoS::AtLeastOnce);
+    Result<void> unsubscribe(const std::string& topic);
 
     // ── Callbacks ─────────────────────────────────────────────────────────────
     using MessageHandler = std::function<void(const std::string& topic, const std::string& payload)>;
@@ -82,6 +79,4 @@ private:
     std::unique_ptr<Impl> pimpl_;
 };
 
-} // namespace mqtt
-} // namespace v1
-} // namespace senzr
+} // namespace senzr::mqtt

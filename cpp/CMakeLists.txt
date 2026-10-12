@@ -1,38 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
-project(edge_gateway_cpp LANGUAGES C CXX)
+project(edge_gateway_cpp LANGUAGES CXX)
 
-include(GNUInstallDirs)
-
-# ── C / C++ Standard ──────────────────────────────────────────────────────────
-set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_STANDARD_REQUIRED ON)
+# ── C++ Standard ──────────────────────────────────────────────────────────────
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-
-# ── SDK Versioning & Header Generation ─────────────────────────────────────────
-set(SENZR_VERSION_MAJOR 1)
-set(SENZR_VERSION_MINOR 1)
-set(SENZR_VERSION_PATCH 0)
-set(SENZR_VERSION_STRING "${SENZR_VERSION_MAJOR}.${SENZR_VERSION_MINOR}.${SENZR_VERSION_PATCH}")
-set(SENZR_SOVERSION ${SENZR_VERSION_MAJOR})
-
-configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/senzr/version.hpp.in
-    ${CMAKE_CURRENT_BINARY_DIR}/include/senzr/version.hpp
-    @ONLY
-)
-
-# ── pkg-config Generation ─────────────────────────────────────────────────────
-configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/senzr.pc.in
-    ${CMAKE_CURRENT_BINARY_DIR}/senzr.pc
-    @ONLY
-)
-
-# ── Symbol Visibility ─────────────────────────────────────────────────────────
-set(CMAKE_CXX_VISIBILITY_PRESET hidden)
-set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 
 # ── Build type default ────────────────────────────────────────────────────────
 if(NOT CMAKE_BUILD_TYPE)
@@ -289,9 +261,9 @@ set(SENZR_SDK_SOURCES
     src/sdk/mqtt.cpp
     src/sdk/ai.cpp
     src/sdk/ai_inference.cpp
+    src/sdk/detector.cpp
     src/sdk/media.cpp
     src/sdk/camera.cpp
-    src/sdk/c_api.cpp
     src/app/updater.cpp
     src/app/gpio_manager.cpp
     src/app/connectivity_manager.cpp
@@ -304,16 +276,10 @@ set(SENZR_SDK_SOURCES
     src/session_pipeline/plate_utils.cpp
 )
 
-add_library(senzr
+add_library(senzr STATIC
     ${SENZR_SDK_SOURCES}
 )
 add_library(Senzr::SDK ALIAS senzr)
-
-target_compile_definitions(senzr PRIVATE SENZR_EXPORTS)
-set_target_properties(senzr PROPERTIES
-    VERSION ${SENZR_VERSION_STRING}
-    SOVERSION ${SENZR_VERSION_MAJOR}
-)
 
 target_include_directories(senzr PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -398,36 +364,17 @@ target_link_libraries(example_04_anpr PRIVATE Senzr::SDK)
 add_executable(example_05_portable_app examples/05_portable_app/main.cpp)
 target_link_libraries(example_05_portable_app PRIVATE Senzr::SDK)
 
+add_executable(example_06_traffic_detector examples/06_traffic_detector/main.cpp)
+target_link_libraries(example_06_traffic_detector PRIVATE Senzr::SDK)
+
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
 enable_testing()
 
 # Public SDK Standalone Headers test
-add_executable(test_public_headers tests/test_public_headers.cpp)
+add_executable(test_public_headers tests/test_public_headers.cpp src/sdk/version.cpp)
 target_include_directories(test_public_headers PRIVATE include)
-target_link_libraries(test_public_headers PRIVATE Senzr::SDK)
 add_test(NAME public_headers COMMAND test_public_headers)
-
-# Result<T> std::expected-style API unit test
-add_executable(test_result_expected tests/test_result_expected.cpp)
-target_include_directories(test_result_expected PRIVATE include)
-target_link_libraries(test_result_expected PRIVATE Senzr::SDK)
-add_test(NAME result_expected COMMAND test_result_expected)
-
-# Pure C API test (C++ wrapper)
-add_executable(test_c_api tests/test_c_api.cpp)
-target_include_directories(test_c_api PRIVATE include)
-target_link_libraries(test_c_api PRIVATE Senzr::SDK)
-add_test(NAME c_api COMMAND test_c_api)
-
-# Pure C11 Standalone Test (strictly compiled with C compiler and C11 flags)
-add_executable(test_c_api_c tests/test_c_api.c)
-target_include_directories(test_c_api_c PRIVATE include)
-target_link_libraries(test_c_api_c PRIVATE Senzr::SDK)
-if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(test_c_api_c PRIVATE -std=c11 -Wall -Wextra -pedantic)
-endif()
-add_test(NAME c_api_c11 COMMAND test_c_api_c)
 
 # ThreadSafeQueue unit test
 add_executable(test_queues tests/test_queues.cpp)
@@ -485,83 +432,79 @@ add_executable(test_unsupported tests/test_unsupported.cpp)
 target_link_libraries(test_unsupported PRIVATE Senzr::SDK)
 add_test(NAME unsupported COMMAND test_unsupported)
 
+# YOLO11s / YOLOv8 Detector unit test
+add_executable(test_detector tests/test_detector.cpp)
+target_link_libraries(test_detector PRIVATE Senzr::SDK)
+add_test(NAME detector COMMAND test_detector)
+
 # Multi-Subsystem Soak & Memory Growth Test
 add_executable(test_soak tests/test_soak.cpp)
 target_link_libraries(test_soak PRIVATE Senzr::SDK)
 add_test(NAME soak COMMAND test_soak 200)
+
+# BLE Mobile Access Challenge-Response unit test
+add_executable(test_ble tests/test_ble.cpp src/app/ble_access_manager.cpp src/app/database.cpp src/app/gpio_manager.cpp)
+target_include_directories(test_ble PRIVATE include src ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
+target_link_libraries(test_ble PRIVATE
+    Senzr::SDK
+    SQLite3::SQLite3
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    Threads::Threads
+)
+if(nlohmann_json_FOUND)
+    target_link_libraries(test_ble PRIVATE nlohmann_json::nlohmann_json)
+endif()
+add_test(NAME ble COMMAND test_ble)
 
 # ── Install & Export Targets ──────────────────────────────────────────────────
 
 include(CMakePackageConfigHelpers)
 
 install(TARGETS senzr EXPORT SenzrTargets
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION bin
 )
 
 install(TARGETS edge-gateway-backend edge-gateway-updater senzr-ctl senzr_app_example
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    RUNTIME DESTINATION bin
 )
 
-# Install public SDK headers
-install(DIRECTORY include/senzr/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/senzr)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/include/senzr/version.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/senzr)
-
-# Install pkg-config file
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/senzr.pc
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
-)
-
-# Install frontend and assets
-install(DIRECTORY frontend/ DESTINATION ${CMAKE_INSTALL_DATADIR}/edge-gateway/frontend)
-install(FILES database/config.json DESTINATION ${CMAKE_INSTALL_DATADIR}/edge-gateway/database)
+install(DIRECTORY include/senzr/ DESTINATION include/senzr)
+install(DIRECTORY frontend/ DESTINATION share/edge-gateway/frontend)
+install(FILES database/config.json DESTINATION share/edge-gateway/database)
 
 # Export CMake Package Configuration
 install(EXPORT SenzrTargets
     FILE SenzrTargets.cmake
     NAMESPACE Senzr::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Senzr
+    DESTINATION lib/cmake/Senzr
 )
 
 configure_package_config_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/cmake/SenzrConfig.cmake.in
     ${CMAKE_CURRENT_BINARY_DIR}/SenzrConfig.cmake
-    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Senzr
+    INSTALL_DESTINATION lib/cmake/Senzr
 )
 
 write_basic_package_version_file(
     ${CMAKE_CURRENT_BINARY_DIR}/SenzrConfigVersion.cmake
-    VERSION ${SENZR_VERSION_STRING}
-    COMPATIBILITY SameMajorVersion
+    VERSION 1.1.0
+    COMPATIBILITY AnyNewerVersion
 )
 
 install(FILES
     ${CMAKE_CURRENT_BINARY_DIR}/SenzrConfig.cmake
     ${CMAKE_CURRENT_BINARY_DIR}/SenzrConfigVersion.cmake
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Senzr
+    DESTINATION lib/cmake/Senzr
 )
-
-# ── CPack Debian Packaging ────────────────────────────────────────────────────
-
-set(CPACK_PACKAGE_NAME "libsenzr")
-set(CPACK_PACKAGE_VENDOR "Senzr")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Senzr Edge OS Commercial Embedded Platform SDK")
-set(CPACK_PACKAGE_VERSION ${SENZR_VERSION_STRING})
-set(CPACK_GENERATOR "DEB")
-set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Senzr Engineering <dev@senzr.io>")
-set(CPACK_DEBIAN_PACKAGE_SECTION "libs")
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "libc6 (>= 2.31), libstdc++6 (>= 11), libsqlite3-0, libcurl4, libssl3")
-set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CMAKE_SYSTEM_PROCESSOR}")
-include(CPack)
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 
 message(STATUS "")
 message(STATUS "=== Edge Gateway C++ Build Configuration ===")
 message(STATUS "  C++ Standard : C++20")
-message(STATUS "  C Standard   : C11")
-message(STATUS "  SDK Version  : ${SENZR_VERSION_STRING} (SOVERSION ${SENZR_SOVERSION})")
 message(STATUS "  Build type   : ${CMAKE_BUILD_TYPE}")
 message(STATUS "  OpenCV       : ${OpenCV_VERSION}")
 message(STATUS "  RKNN         : ${RKNN_FOUND}")

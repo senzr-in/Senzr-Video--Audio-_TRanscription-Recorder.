@@ -1,7 +1,7 @@
 {
   "cameraconnected": false,
   "devicename": "edge-gateway",
-  "mode": "object",
+  "mode": "traffic",
   "provisioningenabled": false,
   "timezone": "Asia/Kolkata",
   "wifipassword": "",

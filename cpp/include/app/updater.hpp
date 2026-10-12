@@ -30,10 +30,14 @@ struct UpdaterConfig {
     std::filesystem::path backup_dir{"/opt/edge-gateway/backup"};
     std::filesystem::path downloads_dir{"/opt/edge-gateway/downloads"};
     int check_interval_sec{60};
-    std::string app_service{"edge-gateway"};
+    std::string app_service{"senzr-edge"};
     std::string health_check_url{"http://127.0.0.1:8000/api/status"};
     std::filesystem::path lock_file{"/tmp/edge-gateway-update.lock"};
     bool reboot_on_success{true};
+    std::filesystem::path state_file{"/opt/edge-gateway/fota_state.json"};
+    std::filesystem::path public_key_file{"/etc/senzr/certs/fota_public_key.pem"};
+    bool allow_downgrade{false};
+    bool enforce_signature{false};
     std::vector<std::string> required_files{
         "frontend/index.html",
         "database/config.json"
@@ -47,13 +51,27 @@ public:
     explicit OtaUpdater(UpdaterConfig config = UpdaterConfig::load_from_env());
     ~OtaUpdater();
 
-    // Core OTA update cycle (supports optional post-update reboot and pre-signed direct URL)
+    // Core OTA update cycle (supports optional post-update reboot, direct URL, explicit checksum, digital signature, and downgrade policy)
     bool run_update(const std::string& version, bool request_reboot = false,
-                    const std::string& direct_url = "", uint64_t size_bytes = 0);
+                    const std::string& direct_url = "", uint64_t size_bytes = 0,
+                    const std::string& expected_checksum = "",
+                    const std::string& signature = "",
+                    bool allow_downgrade = false);
+
+    // Apply directly uploaded local firmware package archive (.zip / .tar.gz)
+    bool apply_archive_update(const std::filesystem::path& archive_path,
+                              const std::string& target_version = "",
+                              bool request_reboot = false);
+
+    // Manual rollback to previous backup snapshot
+    bool manual_rollback();
 
     // Safe async trigger: prevents duplicate threads, manages worker lifecycle
     bool trigger_async_update(const std::string& version, bool request_reboot = false,
-                              const std::string& direct_url = "", uint64_t size_bytes = 0);
+                              const std::string& direct_url = "", uint64_t size_bytes = 0,
+                              const std::string& expected_checksum = "",
+                              const std::string& signature = "",
+                              bool allow_downgrade = false);
     bool is_updating() const { return is_updating_.load(); }
 
     // Periodic checking (S3 poll fallback)
@@ -71,7 +89,7 @@ public:
     void run();
     void stop();
 
-    // Helpers exposed for testing
+    // Helpers exposed for testing & state tracking
     const UpdaterConfig& get_config() const { return config_; }
     std::string get_current_version() const;
     void set_current_version(const std::string& version) const;
@@ -83,6 +101,20 @@ public:
     std::optional<ReleaseMetadata> fetch_latest_metadata() const;
     bool download_release(const std::string& file_name, const std::filesystem::path& dest,
                           const std::string& direct_url = "") const;
+
+    // Cryptographic validation and anti-rollback
+    static int semver_compare(const std::string& v1, const std::string& v2);
+    static bool is_downgrade(const std::string& current_ver, const std::string& target_ver);
+    static bool verify_signature(const std::filesystem::path& path,
+                                 const std::string& signature_base64_or_hex,
+                                 const std::filesystem::path& pubkey_path);
+
+    // Persistent transaction state & crash recovery
+    void persist_state(const std::string& state, const std::string& target_version,
+                       const std::string& message = "") const;
+    void clear_state() const;
+    std::string read_persisted_state() const;
+    bool check_startup_recovery();
 
 private:
     bool acquire_lock() const;

@@ -27,7 +27,12 @@ make -j"$(nproc)"
 # 2. Stage FOTA Release Files
 echo -e "\n[2/4] Staging FOTA release files..."
 rm -rf "${STAGE_DIR}"
-mkdir -p "${STAGE_DIR}/database" "${STAGE_DIR}/models" "${STAGE_DIR}/bin" "${RELEASES_DIR}"
+mkdir -p "${STAGE_DIR}/database" "${STAGE_DIR}/models" "${STAGE_DIR}/bin" "${STAGE_DIR}/frontend" "${RELEASES_DIR}"
+
+# Copy Frontend Web Assets
+if [[ -d "${SCRIPT_DIR}/frontend" ]]; then
+    cp -r "${SCRIPT_DIR}/frontend/"* "${STAGE_DIR}/frontend/"
+fi
 
 # Copy Database initial configuration
 if [[ -f "${BUILD_DIR}/database/config.json" ]]; then
@@ -64,14 +69,25 @@ else
 fi
 rm -rf "${STAGE_DIR}"
 
-# 4. Generate Checksum
+# 4. Generate Checksum & S3 Manifest
 SHA256_HASH=$(sha256sum "${ZIP_OUTPUT}" | awk '{print $1}')
 FILE_SIZE=$(stat -c%s "${ZIP_OUTPUT}" 2>/dev/null || stat -f%z "${ZIP_OUTPUT}")
+
+cat <<EOF > "${RELEASES_DIR}/latest.json"
+{
+  "version": "${VERSION}",
+  "file": "${ZIP_NAME}",
+  "checksum": "${SHA256_HASH}",
+  "size_bytes": ${FILE_SIZE},
+  "release_notes": "SenzrOS v${VERSION} release package with direct Web Upload and Auto-Reboot support"
+}
+EOF
 
 echo -e "\n======================================================"
 echo "  ✅ FOTA RELEASE READY FOR DEPLOYMENT"
 echo "------------------------------------------------------"
 echo "  📦 Package File : ${ZIP_OUTPUT}"
+echo "  📄 S3 Manifest  : ${RELEASES_DIR}/latest.json"
 echo "  📊 File Size    : ${FILE_SIZE} bytes"
 echo "  🔑 SHA-256 Hash : ${SHA256_HASH}"
 echo "  🏷️  Version      : ${VERSION}"

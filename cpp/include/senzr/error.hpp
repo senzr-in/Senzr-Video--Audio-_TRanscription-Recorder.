@@ -36,7 +36,7 @@ enum class ErrorCode {
 /**
  * @brief Returns a static human-readable description for an ErrorCode.
  */
-constexpr std::string_view error_code_to_string(ErrorCode code) noexcept {
+[[nodiscard]] constexpr std::string_view error_code_to_string(ErrorCode code) noexcept {
     switch (code) {
         case ErrorCode::Ok:                  return "Ok";
         case ErrorCode::InvalidArgument:     return "Invalid Argument";
@@ -62,7 +62,7 @@ constexpr std::string_view error_code_to_string(ErrorCode code) noexcept {
  */
 class SENZR_API Error {
 public:
-    Error() noexcept : code_(ErrorCode::Ok), message_("") {}
+    Error() noexcept : code_(ErrorCode::Ok), message_() {}
     
     Error(ErrorCode code, std::string message = "")
         : code_(code), message_(std::move(message)) {
@@ -77,15 +77,21 @@ public:
     [[nodiscard]] constexpr bool is_error() const noexcept { return code_ != ErrorCode::Ok; }
     [[nodiscard]] explicit constexpr operator bool() const noexcept { return is_error(); }
 
-    [[nodiscard]] static Error ok() noexcept { return Error(); }
+    [[nodiscard]] static Error ok() noexcept { return Error(ErrorCode::Ok, ""); }
 
 private:
     ErrorCode code_{ErrorCode::Ok};
     std::string message_;
 };
 
+// Forward declaration
+template <typename T>
+class [[nodiscard]] Result;
+
 /**
- * @brief Type-safe result monad API-compatible with C++23 std::expected<T, Error>.
+ * @brief Type-safe result monad returning either T or senzr::Error.
+ *
+ * Provides a modern C++20 monadic interface compatible with C++23 std::expected.
  */
 template <typename T>
 class [[nodiscard]] Result {
@@ -93,7 +99,7 @@ public:
     using value_type = T;
     using error_type = Error;
 
-    // Value constructor
+    // Value constructors
     Result(T value) : data_(std::move(value)) {}
 
     // Static factories
@@ -111,23 +117,6 @@ public:
 
     [[nodiscard]] explicit operator bool() const noexcept {
         return has_value();
-    }
-
-    // std::expected dereference operators
-    [[nodiscard]] const T& operator*() const & noexcept {
-        return std::get<T>(data_);
-    }
-
-    [[nodiscard]] T& operator*() & noexcept {
-        return std::get<T>(data_);
-    }
-
-    [[nodiscard]] const T* operator->() const noexcept {
-        return &std::get<T>(data_);
-    }
-
-    [[nodiscard]] T* operator->() noexcept {
-        return &std::get<T>(data_);
     }
 
     [[nodiscard]] const T& value() const & {
@@ -151,6 +140,26 @@ public:
         return std::get<T>(std::move(data_));
     }
 
+    [[nodiscard]] const T& operator*() const & noexcept {
+        return std::get<T>(data_);
+    }
+
+    [[nodiscard]] T& operator*() & noexcept {
+        return std::get<T>(data_);
+    }
+
+    [[nodiscard]] T&& operator*() && noexcept {
+        return std::get<T>(std::move(data_));
+    }
+
+    [[nodiscard]] const T* operator->() const noexcept {
+        return std::addressof(std::get<T>(data_));
+    }
+
+    [[nodiscard]] T* operator->() noexcept {
+        return std::addressof(std::get<T>(data_));
+    }
+
     template <typename U>
     [[nodiscard]] T value_or(U&& default_value) const & {
         return has_value() ? std::get<T>(data_) : static_cast<T>(std::forward<U>(default_value));
@@ -161,7 +170,7 @@ public:
         return has_value() ? std::get<T>(std::move(data_)) : static_cast<T>(std::forward<U>(default_value));
     }
 
-    [[nodiscard]] const Error& error() const noexcept {
+    [[nodiscard]] const Error& error() const & noexcept {
         static const Error ok_error = Error::ok();
         if (const auto* err = std::get_if<Error>(&data_)) {
             return *err;
@@ -169,24 +178,58 @@ public:
         return ok_error;
     }
 
-    // Monadic transform: F maps T -> U
-    template <typename F>
-    auto transform(F&& f) const & -> Result<std::remove_cvref_t<std::invoke_result_t<F, const T&>>> {
-        using U = std::remove_cvref_t<std::invoke_result_t<F, const T&>>;
-        if (has_value()) {
-            return Result<U>::success(f(std::get<T>(data_)));
+    [[nodiscard]] Error& error() & noexcept {
+        static Error ok_error = Error::ok();
+        if (auto* err = std::get_if<Error>(&data_)) {
+            return *err;
         }
-        return Result<U>::failure(error());
+        return ok_error;
     }
 
-    // Monadic and_then: F maps T -> Result<U>
+    // ── Monadic Operations ────────────────────────────────────────────────────
+    
     template <typename F>
-    auto and_then(F&& f) const & -> std::invoke_result_t<F, const T&> {
+    auto and_then(F&& f) const & {
         using ReturnType = std::invoke_result_t<F, const T&>;
         if (has_value()) {
-            return f(std::get<T>(data_));
+            return std::forward<F>(f)(value());
         }
-        return ReturnType::failure(error());
+        return ReturnType(error());
+    }
+
+    template <typename F>
+    auto and_then(F&& f) && {
+        using ReturnType = std::invoke_result_t<F, T&&>;
+        if (has_value()) {
+            return std::forward<F>(f)(std::move(*this).value());
+        }
+        return ReturnType(error());
+    }
+
+    template <typename F>
+    auto transform(F&& f) const & {
+        using NewValueType = std::invoke_result_t<F, const T&>;
+        if (has_value()) {
+            return Result<NewValueType>(std::forward<F>(f)(value()));
+        }
+        return Result<NewValueType>(error());
+    }
+
+    template <typename F>
+    auto transform(F&& f) && {
+        using NewValueType = std::invoke_result_t<F, T&&>;
+        if (has_value()) {
+            return Result<NewValueType>(std::forward<F>(f)(std::move(*this).value()));
+        }
+        return Result<NewValueType>(error());
+    }
+
+    template <typename F>
+    Result<T> or_else(F&& f) const & {
+        if (!has_value()) {
+            return std::forward<F>(f)(error());
+        }
+        return *this;
     }
 
 private:
@@ -202,31 +245,36 @@ public:
     using value_type = void;
     using error_type = Error;
 
-    Result() : error_(Error::ok()) {}
-    Result(Error error) : error_(std::move(error)) {}
+    Result() noexcept : error_(Error::ok()) {}
+    Result(Error error) noexcept : error_(std::move(error)) {}
     Result(ErrorCode code, std::string message = "") : error_(Error(code, std::move(message))) {}
 
     [[nodiscard]] bool has_value() const noexcept { return error_.is_ok(); }
     [[nodiscard]] explicit operator bool() const noexcept { return has_value(); }
-    [[nodiscard]] const Error& error() const noexcept { return error_; }
-
-    void value() const {
-        if (!has_value()) {
-            throw std::runtime_error("senzr::Result<void> accessed without value: " + error_.message());
-        }
-    }
+    
+    [[nodiscard]] const Error& error() const & noexcept { return error_; }
+    [[nodiscard]] Error& error() & noexcept { return error_; }
+    [[nodiscard]] Error error() && noexcept { return std::move(error_); }
 
     static Result<void> success() noexcept { return Result<void>(); }
     static Result<void> failure(ErrorCode code, std::string message = "") { return Result<void>(code, std::move(message)); }
-    static Result<void> failure(Error error) { return Result<void>(std::move(error)); }
+    static Result<void> failure(Error error) noexcept { return Result<void>(std::move(error)); }
 
     template <typename F>
-    auto and_then(F&& f) const & -> std::invoke_result_t<F> {
+    auto and_then(F&& f) const {
         using ReturnType = std::invoke_result_t<F>;
         if (has_value()) {
-            return f();
+            return std::forward<F>(f)();
         }
-        return ReturnType::failure(error_);
+        return ReturnType(error_);
+    }
+
+    template <typename F>
+    Result<void> or_else(F&& f) const {
+        if (!has_value()) {
+            return std::forward<F>(f)(error_);
+        }
+        return *this;
     }
 
 private:

@@ -1,8 +1,9 @@
 {
   "cameraconnected": true,
-  "devicename": "edge-gateway-framework",
-  "mode": "object",
-  "provisioningenabled": true,
-  "wifipassword": "changeme123",
-  "wifissid": "EdgeGateway"
+  "devicename": "edge-gateway",
+  "mode": "traffic",
+  "provisioningenabled": false,
+  "timezone": "Asia/Kolkata",
+  "wifipassword": "",
+  "wifissid": ""
 }

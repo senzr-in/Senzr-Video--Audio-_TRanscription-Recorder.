@@ -1,9 +1,7 @@
 #include "senzr/ble.hpp"
 #include "app/ble_access_manager.hpp"
 
-namespace senzr {
-inline namespace v1 {
-namespace ble {
+namespace senzr::ble {
 
 struct Manager::Impl {
     app::BleAccessManager& backend{app::BleAccessManager::instance()};
@@ -11,8 +9,6 @@ struct Manager::Impl {
 
 Manager::Manager() : pimpl_(std::make_unique<Impl>()) {}
 Manager::~Manager() = default;
-Manager::Manager(Manager&&) noexcept = default;
-Manager& Manager::operator=(Manager&&) noexcept = default;
 
 Manager& Manager::get_instance() {
     static Manager inst;
@@ -53,6 +49,4 @@ bool Manager::is_connected() const {
     return pimpl_->backend.is_running();
 }
 
-} // namespace ble
-} // namespace v1
-} // namespace senzr
+} // namespace senzr::ble

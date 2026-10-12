@@ -1,9 +1,7 @@
 #include "senzr/mqtt/client.hpp"
 #include "app/mqtt_access_client.hpp"
 
-namespace senzr {
-inline namespace v1 {
-namespace mqtt {
+namespace senzr::mqtt {
 
 struct Client::Impl {
     MqttConfig config;
@@ -85,6 +83,4 @@ void Client::set_connection_handler(ConnectionHandler handler) {
     pimpl_->conn_handler = std::move(handler);
 }
 
-} // namespace mqtt
-} // namespace v1
-} // namespace senzr
+} // namespace senzr::mqtt

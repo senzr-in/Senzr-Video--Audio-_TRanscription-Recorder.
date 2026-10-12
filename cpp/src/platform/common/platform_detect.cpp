@@ -3,12 +3,6 @@
 #include "platform/jetson/jetson_backend.hpp"
 #include <cstdlib>
 #include <mutex>
-#include <fstream>
-#include <thread>
-
-#ifndef _WIN32
-#include <sys/utsname.h>
-#endif
 
 namespace senzr::platform {
 
@@ -62,38 +56,16 @@ PlatformInfo query_platform_info() {
         return jetson::get_jetson_info();
     }
 
-    // Generic Linux Probing
+    // Generic Linux Fallback
     PlatformInfo info;
     info.platform = Platform::GenericLinux;
     info.platform_name = "Generic Linux Edge Host";
-
-#ifndef _WIN32
-    struct utsname uts{};
-    if (uname(&uts) == 0) {
-        info.architecture = uts.machine;
-        info.kernel_version = uts.release;
-        info.os_info = std::string(uts.sysname) + " " + uts.release;
-    } else {
-#if defined(__aarch64__)
-        info.architecture = "aarch64";
-#elif defined(__x86_64__)
-        info.architecture = "x86_64";
-#else
-        info.architecture = "unknown";
-#endif
-        info.kernel_version = "Linux";
-        info.os_info = "Linux";
-    }
-#else
-    info.architecture = "x86_64";
-    info.kernel_version = "Windows/NT";
-    info.os_info = "Windows";
-#endif
-
-    info.cpu_model = "Host CPU";
-    info.cpu_cores = static_cast<int>(std::thread::hardware_concurrency());
-    if (info.cpu_cores <= 0) info.cpu_cores = 4;
+    info.architecture = "x86_64 / generic aarch64";
+    info.cpu_model = "Generic Linux CPU";
+    info.cpu_cores = 4;
     info.ram_total_mb = 8192;
+    info.os_info = "Linux Standard Kernel";
+    info.kernel_version = "Generic Linux";
     info.accelerator.type = AcceleratorType::CpuFallback;
     info.accelerator.name = "Host CPU Software Fallback";
     info.accelerator.is_available = true;

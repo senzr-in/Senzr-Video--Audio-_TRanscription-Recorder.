@@ -3,9 +3,7 @@
 #include "session_pipeline/plate_utils.hpp"
 #include <iostream>
 
-namespace senzr {
-inline namespace v1 {
-namespace ai {
+namespace senzr::ai {
 
 struct PersonDetector::Impl {
     PersonDetectorConfig config;
@@ -74,6 +72,4 @@ PlateInfo AnprEngine::validate_and_format_plate(const std::string& raw_text, flo
     return info;
 }
 
-} // namespace ai
-} // namespace v1
-} // namespace senzr
+} // namespace senzr::ai

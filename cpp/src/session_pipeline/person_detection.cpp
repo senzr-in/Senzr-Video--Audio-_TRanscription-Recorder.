@@ -514,16 +514,6 @@ void PersonDetectionWorker::run(std::stop_token stoken) {
         }
         rknn_outputs_release(ctx_, n_outputs, raw_outputs.data());
 
-        // ── Debug print every DEBUG_EVERY_N_FRAMES ────────────────────────────
-        if (frame_counter_ % DEBUG_EVERY_N_FRAMES == 0) {
-            std::cout << "[DEBUG] raw output count=" << n_outputs << '\n';
-            for (int i = 0; i < n_outputs; ++i) {
-                float max_s = *std::max_element(outputs[i].begin(), outputs[i].end());
-                std::cout << "[DEBUG] output[" << i << "] size="
-                          << outputs[i].size() << " max=" << max_s << '\n';
-            }
-        }
-
         // ── Decode (NCHW DFL + NMS + un-padding) ─────────────────────────────
         decode_yolov8(outputs, boxes, scores, cls_ids, lb_info);
 
@@ -681,6 +671,19 @@ void PersonDetectionWorker::run(std::stop_token stoken) {
                             cv::FONT_HERSHEY_SIMPLEX, 0.44, cv::Scalar(0, 0, 0), 1, cv::LINE_AA);
             }
 
+            // Calculate live pipeline FPS
+            static auto last_fps_time = std::chrono::steady_clock::now();
+            static int fps_frame_count = 0;
+            static float current_measured_fps = 30.0f;
+            fps_frame_count++;
+            auto now_fps = std::chrono::steady_clock::now();
+            auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now_fps - last_fps_time).count();
+            if (elapsed_ms >= 500) {
+                current_measured_fps = (fps_frame_count * 1000.0f) / elapsed_ms;
+                fps_frame_count = 0;
+                last_fps_time = now_fps;
+            }
+
             // Draw Top HUD Bar
             cv::Rect hud_bar(0, 0, preview.cols, 26);
             cv::Mat hud_roi = preview(hud_bar);
@@ -693,8 +696,10 @@ void PersonDetectionWorker::run(std::stop_token stoken) {
                 plate_tag = " [" + (top_p.is_valid ? top_p.formatted_plate : top_p.clean_number) + "]";
             }
 
+            char fps_buf[16];
+            snprintf(fps_buf, sizeof(fps_buf), "%.1f", current_measured_fps);
             std::string hud_text = "MODE: " + cur_mode +
-                                   " | PERSONS: " + std::to_string(confirmed_persons) +
+                                   " | FPS: " + std::string(fps_buf) +
                                    " | PLATES: " + std::to_string(plates.size()) + plate_tag +
                                    " | " + (is_recording_ ? "REC [LIVE]" : "MONITORING");
             cv::putText(preview, hud_text, cv::Point(10, 18),
@@ -709,6 +714,7 @@ void PersonDetectionWorker::run(std::stop_token stoken) {
             nlohmann::json meta;
             meta["timestamp"] = ts;
             meta["frame"] = frame_counter_;
+            meta["fps"] = std::round(current_measured_fps * 10.0f) / 10.0f;
             meta["mode"] = cur_mode;
             meta["is_recording"] = is_recording_;
             meta["persons"] = nlohmann::json::array();
@@ -740,23 +746,11 @@ void PersonDetectionWorker::run(std::stop_token stoken) {
             preview_cb_(jpeg_buf, meta);
         }
 
-        if (frame_counter_ % DEBUG_EVERY_N_FRAMES == 0) {
-            std::cout << "[DEBUG] mode=" << cur_mode
-                      << " persons=" << boxes.size()
-                      << " plates=" << plates.size()
-                      << " person_best=" << best_score << '\n';
-            std::cout << "[DETECT] seen=" << person_seen_
-                      << " missing=" << person_missing_
-                      << " is_recording=" << (is_recording_ ? "true" : "false") << '\n';
-        }
-
-        // Heartbeat every 30 frames
-        if (frame_counter_ % 30 == 0) {
-            std::cout << "[person_detection] heartbeat frame=" << frame_counter_
-                      << " best_score=" << best_score
-                      << " seen=" << person_seen_
-                      << " missing=" << person_missing_
-                      << " is_recording=" << (is_recording_ ? "true" : "false") << '\n';
+        // Periodic engine heartbeat every 150 frames (~5-10s)
+        if (frame_counter_ % 150 == 0) {
+            std::cout << "[person_detection] NPU Heartbeat | Frame #" << frame_counter_
+                      << " | Mode: " << cur_mode
+                      << " | State: " << (is_recording_ ? "RECORDING" : "IDLE") << '\n';
         }
     }
 

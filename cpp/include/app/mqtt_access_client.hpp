@@ -63,7 +63,10 @@ public:
     using OtaUpdateHandler = std::function<bool(const std::string& version,
                                                 const std::string& url,
                                                 bool reboot,
-                                                uint64_t size_bytes)>;
+                                                uint64_t size_bytes,
+                                                const std::string& checksum,
+                                                const std::string& signature,
+                                                bool allow_downgrade)>;
     void set_ota_update_handler(OtaUpdateHandler handler);
     bool publish_ota_status(const std::string& status, const std::string& message, const std::string& version);
 

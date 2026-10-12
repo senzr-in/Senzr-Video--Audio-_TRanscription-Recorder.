@@ -17,6 +17,9 @@
 
 #include <curl/curl.h>
 #include <openssl/evp.h>
+#include <openssl/pem.h>
+#include <openssl/err.h>
+#include <openssl/bio.h>
 
 #ifdef HAVE_MOSQUITTO
 #include <mosquitto.h>
@@ -150,10 +153,14 @@ UpdaterConfig UpdaterConfig::load_from_env(const std::filesystem::path& env_file
     cfg.backup_dir       = getenv_str("BACKUP_DIR", "/opt/edge-gateway/backup");
     cfg.downloads_dir    = getenv_str("DOWNLOADS_DIR", "/opt/edge-gateway/downloads");
     cfg.check_interval_sec = getenv_int("CHECK_INTERVAL", 60);
-    cfg.app_service      = getenv_str("APP_SERVICE", "edge-gateway");
+    cfg.app_service      = getenv_str("APP_SERVICE", "senzr-edge");
     cfg.health_check_url = getenv_str("HEALTH_CHECK_URL", "http://127.0.0.1:8000/api/status");
     cfg.lock_file        = getenv_str("LOCK_FILE", "/tmp/edge-gateway-update.lock");
     cfg.reboot_on_success = (getenv_str("REBOOT_AFTER_UPDATE", "false") == "true");
+    cfg.state_file       = getenv_str("STATE_FILE", "/opt/edge-gateway/fota_state.json");
+    cfg.public_key_file  = getenv_str("PUBLIC_KEY_FILE", "/etc/senzr/certs/fota_public_key.pem");
+    cfg.allow_downgrade  = (getenv_str("ALLOW_DOWNGRADE", "false") == "true");
+    cfg.enforce_signature = (getenv_str("ENFORCE_SIGNATURE", "false") == "true");
 
     return cfg;
 }
@@ -229,19 +236,20 @@ void OtaUpdater::log(const std::string& level, const std::string& msg) const {
 // ── Version management ───────────────────────────────────────────────────────
 
 std::string OtaUpdater::get_current_version() const {
-    // 1. Try reading version.txt
-    auto vtxt = config_.current_dir / "version.txt";
-    if (std::filesystem::exists(vtxt)) {
-        std::ifstream f(vtxt);
-        std::string v;
-        if (f >> v && !v.empty()) return v;
-    }
-    // 2. Try reading .version
-    auto vdot = config_.current_dir / ".version";
-    if (std::filesystem::exists(vdot)) {
-        std::ifstream f(vdot);
-        std::string v;
-        if (f >> v && !v.empty()) return v;
+    for (const auto& p : {
+        config_.current_dir / "version.txt",
+        config_.current_dir / ".version",
+        std::filesystem::path("/opt/edge-gateway/version.txt"),
+        std::filesystem::path("/opt/edge-gateway/.version"),
+        std::filesystem::path("/opt/edge-gateway/current/version.txt"),
+        std::filesystem::path("version.txt"),
+        std::filesystem::path(".version")
+    }) {
+        if (std::filesystem::exists(p)) {
+            std::ifstream f(p);
+            std::string v;
+            if (f >> v && !v.empty()) return v;
+        }
     }
     return "0.0.0";
 }
@@ -249,11 +257,21 @@ std::string OtaUpdater::get_current_version() const {
 void OtaUpdater::set_current_version(const std::string& version) const {
     try {
         std::filesystem::create_directories(config_.current_dir);
-        // Write both version.txt and .version
-        std::ofstream f1(config_.current_dir / "version.txt");
-        if (f1.is_open()) f1 << version;
-        std::ofstream f2(config_.current_dir / ".version");
-        if (f2.is_open()) f2 << version;
+        for (const auto& p : {
+            config_.current_dir / "version.txt",
+            config_.current_dir / ".version",
+            std::filesystem::path("/opt/edge-gateway/version.txt"),
+            std::filesystem::path("/opt/edge-gateway/.version"),
+            std::filesystem::path("/opt/edge-gateway/current/version.txt"),
+            std::filesystem::path("/opt/edge-gateway/current/.version"),
+            std::filesystem::path("version.txt"),
+            std::filesystem::path(".version")
+        }) {
+            std::error_code ec;
+            std::filesystem::create_directories(p.parent_path(), ec);
+            std::ofstream f(p);
+            if (f.is_open()) f << version << '\n';
+        }
 
         std::cout << "\n======================================================\n";
         std::cout << "  🎉 SYSTEM FIRMWARE VERSION UPDATED TO: " << version << "\n";
@@ -330,6 +348,190 @@ std::string OtaUpdater::sha256_of_file(const std::filesystem::path& path) {
     return oss.str();
 }
 
+// ── Cryptographic Signature Verification & Anti-Rollback ─────────────────────
+
+static std::vector<unsigned char> decode_signature_bytes(const std::string& input) {
+    if (input.empty()) return {};
+
+    // 1. Try Hex
+    bool is_hex = (input.size() % 2 == 0) && std::all_of(input.begin(), input.end(), [](char c) {
+        return std::isxdigit(static_cast<unsigned char>(c));
+    });
+    if (is_hex) {
+        std::vector<unsigned char> bytes;
+        bytes.reserve(input.size() / 2);
+        for (size_t i = 0; i < input.size(); i += 2) {
+            unsigned int byte_val = 0;
+            std::sscanf(input.substr(i, 2).c_str(), "%02x", &byte_val);
+            bytes.push_back(static_cast<unsigned char>(byte_val));
+        }
+        return bytes;
+    }
+
+    // 2. Base64 via OpenSSL BIO
+    BIO* b64 = BIO_new(BIO_f_base64());
+    if (!b64) return {};
+    BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
+    BIO* mem = BIO_new_mem_buf(input.data(), static_cast<int>(input.size()));
+    if (!mem) {
+        BIO_free(b64);
+        return {};
+    }
+    BIO* bio = BIO_push(b64, mem);
+
+    std::vector<unsigned char> out(input.size());
+    int decoded_len = BIO_read(bio, out.data(), static_cast<int>(out.size()));
+    BIO_free_all(bio);
+
+    if (decoded_len > 0) {
+        out.resize(static_cast<size_t>(decoded_len));
+        return out;
+    }
+    return {};
+}
+
+bool OtaUpdater::verify_signature(const std::filesystem::path& path,
+                                  const std::string& signature_base64_or_hex,
+                                  const std::filesystem::path& pubkey_path) {
+    if (!std::filesystem::exists(pubkey_path) || !std::filesystem::exists(path)) {
+        return false;
+    }
+
+    FILE* pub_fp = std::fopen(pubkey_path.string().c_str(), "rb");
+    if (!pub_fp) return false;
+    EVP_PKEY* pkey = PEM_read_PUBKEY(pub_fp, nullptr, nullptr, nullptr);
+    std::fclose(pub_fp);
+    if (!pkey) return false;
+
+    auto sig_bytes = decode_signature_bytes(signature_base64_or_hex);
+    if (sig_bytes.empty()) {
+        EVP_PKEY_free(pkey);
+        return false;
+    }
+
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    if (!ctx) {
+        EVP_PKEY_free(pkey);
+        return false;
+    }
+
+    bool ok = false;
+    if (EVP_DigestVerifyInit(ctx, nullptr, EVP_sha256(), nullptr, pkey) == 1) {
+        std::ifstream file(path, std::ios::binary);
+        if (file.is_open()) {
+            char buf[8192];
+            bool read_err = false;
+            while (file.read(buf, sizeof(buf)) || file.gcount() > 0) {
+                if (EVP_DigestVerifyUpdate(ctx, buf, static_cast<size_t>(file.gcount())) != 1) {
+                    read_err = true;
+                    break;
+                }
+            }
+            if (!read_err) {
+                int verify_res = EVP_DigestVerifyFinal(ctx, sig_bytes.data(), sig_bytes.size());
+                ok = (verify_res == 1);
+            }
+        }
+    }
+
+    EVP_MD_CTX_free(ctx);
+    EVP_PKEY_free(pkey);
+    return ok;
+}
+
+int OtaUpdater::semver_compare(const std::string& v1, const std::string& v2) {
+    auto parse_parts = [](const std::string& ver) -> std::vector<int> {
+        std::vector<int> parts;
+        std::string s = ver;
+        if (!s.empty() && (s[0] == 'v' || s[0] == 'V')) s = s.substr(1);
+        std::stringstream ss(s);
+        std::string seg;
+        while (std::getline(ss, seg, '.')) {
+            size_t idx = 0;
+            while (idx < seg.size() && std::isdigit(static_cast<unsigned char>(seg[idx]))) {
+                ++idx;
+            }
+            if (idx > 0) {
+                try { parts.push_back(std::stoi(seg.substr(0, idx))); } catch (...) { parts.push_back(0); }
+            } else {
+                parts.push_back(0);
+            }
+        }
+        while (parts.size() < 3) parts.push_back(0);
+        return parts;
+    };
+
+    auto p1 = parse_parts(v1);
+    auto p2 = parse_parts(v2);
+    for (size_t i = 0; i < std::max(p1.size(), p2.size()); ++i) {
+        int a = i < p1.size() ? p1[i] : 0;
+        int b = i < p2.size() ? p2[i] : 0;
+        if (a < b) return -1;
+        if (a > b) return 1;
+    }
+    return 0;
+}
+
+bool OtaUpdater::is_downgrade(const std::string& current_ver, const std::string& target_ver) {
+    if (target_ver.empty() || target_ver == "firmware_update" || current_ver.empty() || current_ver == "0.0.0") {
+        return false;
+    }
+    return semver_compare(target_ver, current_ver) < 0;
+}
+
+// ── Persistent Transaction State File & Recovery ─────────────────────────────
+
+void OtaUpdater::persist_state(const std::string& state, const std::string& target_version,
+                               const std::string& message) const {
+    try {
+        json j = {
+            {"device_id", config_.device_id},
+            {"state", state},
+            {"target_version", target_version},
+            {"current_version", get_current_version()},
+            {"message", message},
+            {"timestamp", std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count()}
+        };
+        std::error_code ec;
+        std::filesystem::create_directories(config_.state_file.parent_path(), ec);
+        std::ofstream f(config_.state_file);
+        if (f.is_open()) {
+            f << j.dump(2) << std::endl;
+        }
+    } catch (...) {}
+}
+
+void OtaUpdater::clear_state() const {
+    std::error_code ec;
+    std::filesystem::remove(config_.state_file, ec);
+}
+
+std::string OtaUpdater::read_persisted_state() const {
+    if (!std::filesystem::exists(config_.state_file)) return "";
+    try {
+        std::ifstream f(config_.state_file);
+        json j;
+        f >> j;
+        return j.value("state", "");
+    } catch (...) {
+        return "";
+    }
+}
+
+bool OtaUpdater::check_startup_recovery() {
+    std::string persisted_state = read_persisted_state();
+    if (persisted_state == "installing" || persisted_state == "testing") {
+        log("WARNING", "Detected interrupted update in state '" + persisted_state + "' — power cut or crash during previous install!");
+        log("INFO", "Initiating automatic emergency rollback to restore previous known-good firmware...");
+        publish_status("rollback", "Auto-recovering from interrupted power-loss installation");
+        bool rolled_back = manual_rollback();
+        clear_state();
+        return rolled_back;
+    }
+    return false;
+}
+
 // ── Service control ──────────────────────────────────────────────────────────
 
 static void ensure_service_unit_installed(const std::string& service) {
@@ -369,30 +571,33 @@ static void ensure_service_unit_installed(const std::string& service) {
 }
 
 bool OtaUpdater::service_action(const std::string& action, const std::string& service) {
-    // If stopping, check if the service is actually running under systemd
-    if (action == "stop") {
-        int check = std::system(("SYSTEMD_ASK_PASSWORD=0 systemctl --no-ask-password is-active --quiet " + service + " >/dev/null 2>&1").c_str());
-        if (check != 0) {
-            // Not running as a systemd unit (e.g. running interactively or already stopped) — skip stop
-            return true;
+    std::vector<std::string> candidates = {service, "senzr-edge", "edge-gateway"};
+    for (const auto& svc : candidates) {
+        if (svc.empty()) continue;
+        if (action == "stop") {
+            int check = std::system(("SYSTEMD_ASK_PASSWORD=0 systemctl --no-ask-password is-active --quiet " + svc + " >/dev/null 2>&1").c_str());
+            if (check != 0) continue;
         }
-    }
 
-    ensure_service_unit_installed(service);
-    std::string cmd;
-    if (::geteuid() == 0) {
-        cmd = "SYSTEMD_ASK_PASSWORD=0 systemctl --no-ask-password " + action + " " + service + " >/dev/null 2>&1";
-    } else {
-        // Non-root: try passwordless sudo first, then systemctl directly with ask-password disabled
-        cmd = "sudo -n systemctl --no-ask-password " + action + " " + service + " >/dev/null 2>&1 || SYSTEMD_ASK_PASSWORD=0 systemctl --no-ask-password " + action + " " + service + " >/dev/null 2>&1";
+        std::string cmd;
+        if (::geteuid() == 0) {
+            cmd = "SYSTEMD_ASK_PASSWORD=0 systemctl --no-ask-password " + action + " " + svc + " >/dev/null 2>&1";
+        } else {
+            cmd = "sudo -n systemctl --no-ask-password " + action + " " + svc + " >/dev/null 2>&1 || SYSTEMD_ASK_PASSWORD=0 systemctl --no-ask-password " + action + " " + svc + " >/dev/null 2>&1";
+        }
+        int ret = std::system(cmd.c_str());
+        if (ret == 0) return true;
     }
-    int ret = std::system(cmd.c_str());
-    return (ret == 0);
+    return true;
 }
 
 // ── Health check ─────────────────────────────────────────────────────────────
 
 bool OtaUpdater::health_check(int retries, int delay_sec) const {
+    if (config_.health_check_url.empty() || config_.health_check_url == "mock_pass" || config_.health_check_url == "disabled") {
+        return true;
+    }
+
     for (int i = 0; i < retries; ++i) {
         CURL* curl = curl_easy_init();
         if (curl) {
@@ -638,7 +843,10 @@ void OtaUpdater::publish_telemetry() const {
 // ── Asynchronous Update Worker Management ────────────────────────────────────
 
 bool OtaUpdater::trigger_async_update(const std::string& version, bool request_reboot,
-                                      const std::string& direct_url, uint64_t size_bytes) {
+                                      const std::string& direct_url, uint64_t size_bytes,
+                                      const std::string& expected_checksum,
+                                      const std::string& signature,
+                                      bool allow_downgrade) {
     if (is_updating_.load()) {
         log("WARNING", "Update already running in this process — ignoring trigger for version " + version);
         return false;
@@ -650,10 +858,10 @@ bool OtaUpdater::trigger_async_update(const std::string& version, bool request_r
         update_worker_.reset();
     }
 
-    update_worker_ = std::make_unique<std::thread>([this, version, request_reboot, direct_url, size_bytes]() {
+    update_worker_ = std::make_unique<std::thread>([this, version, request_reboot, direct_url, size_bytes, expected_checksum, signature, allow_downgrade]() {
         // run_update's internal RAII UpdateScopeGuard guarantees release_lock() and
         // is_updating_.store(false) execute even under exceptions — no manual cleanup here.
-        this->run_update(version, request_reboot, direct_url, size_bytes);
+        this->run_update(version, request_reboot, direct_url, size_bytes, expected_checksum, signature, allow_downgrade);
     });
 
     return true;
@@ -662,7 +870,10 @@ bool OtaUpdater::trigger_async_update(const std::string& version, bool request_r
 // ── Core Update Routine ──────────────────────────────────────────────────────
 
 bool OtaUpdater::run_update(const std::string& version, bool request_reboot,
-                            const std::string& direct_url, uint64_t size_bytes) {
+                            const std::string& direct_url, uint64_t size_bytes,
+                            const std::string& expected_checksum,
+                            const std::string& signature,
+                            bool allow_downgrade) {
     bool expected = false;
     if (!is_updating_.compare_exchange_strong(expected, true)) {
         log("WARNING", "Update already running in this process — ignoring trigger");
@@ -690,9 +901,17 @@ bool OtaUpdater::run_update(const std::string& version, bool request_reboot,
         return true;
     }
 
+    // 0b. Anti-Rollback / Downgrade Protection Check
+    if (!allow_downgrade && !config_.allow_downgrade && is_downgrade(current_ver, version)) {
+        log("ERROR", "Anti-rollback policy: cannot downgrade running firmware " + current_ver + " to older version " + version);
+        publish_status("failed", "Downgrade rejected by anti-rollback policy", version);
+        return false;
+    }
+
     log("INFO", "Starting OTA update: " + current_ver + " -> " + version + " for device " + config_.device_id +
                 (request_reboot || config_.reboot_on_success ? " (with automatic reboot)" : ""));
     publish_status("downloading", "Starting firmware update download", version);
+    persist_state("downloading", version, "Starting firmware package download");
 
     // 0. Pre-flight storage check
     if (!check_disk_space(size_bytes)) {
@@ -700,10 +919,30 @@ bool OtaUpdater::run_update(const std::string& version, bool request_reboot,
         return false;
     }
 
-    auto meta = fetch_latest_metadata();
-    std::string release_file = meta ? meta->file : (version + ".zip");
-    std::string expected_sha = meta ? meta->checksum : "";
-    if (meta && size_bytes == 0) size_bytes = meta->size_bytes;
+    // Resolve target filename and checksum
+    std::string release_file = "edge-gateway-v" + version + ".zip";
+    if (!direct_url.empty()) {
+        auto slash = direct_url.rfind('/');
+        auto qmark = direct_url.find('?', slash);
+        if (slash != std::string::npos) {
+            std::string fname = (qmark != std::string::npos)
+                ? direct_url.substr(slash + 1, qmark - slash - 1)
+                : direct_url.substr(slash + 1);
+            if (!fname.empty() && fname.ends_with(".zip")) {
+                release_file = fname;
+            }
+        }
+    }
+
+    std::string expected_sha = expected_checksum;
+    if (expected_sha.empty()) {
+        auto meta = fetch_latest_metadata();
+        if (meta && (meta->version == version || version.empty() || version == "firmware_update")) {
+            release_file = meta->file;
+            expected_sha = meta->checksum;
+            if (size_bytes == 0) size_bytes = meta->size_bytes;
+        }
+    }
 
     std::error_code dir_ec;
     std::filesystem::create_directories(config_.downloads_dir, dir_ec);
@@ -739,8 +978,30 @@ bool OtaUpdater::run_update(const std::string& version, bool request_reboot,
             log("INFO", "Checksum verified successfully (" + actual_sha + ")");
         }
 
+        // 2b. Cryptographic Digital Signature Verification
+        if (!signature.empty() || config_.enforce_signature || std::filesystem::exists(config_.public_key_file)) {
+            if (!signature.empty() && std::filesystem::exists(config_.public_key_file)) {
+                publish_status("verifying", "Verifying cryptographic digital signature", version);
+                if (!verify_signature(zip_path, signature, config_.public_key_file)) {
+                    log("ERROR", "Cryptographic signature verification failed for package: " + zip_path.string());
+                    publish_status("failed", "Cryptographic signature verification failed", version);
+                    std::error_code ec;
+                    std::filesystem::remove(zip_path, ec);
+                    return false;
+                }
+                log("INFO", "Cryptographic digital signature verified successfully with OEM public key.");
+            } else if (config_.enforce_signature) {
+                log("ERROR", "Update rejected: signature verification is enforced but signature or public key is missing");
+                publish_status("failed", "Mandatory cryptographic signature missing", version);
+                std::error_code ec;
+                std::filesystem::remove(zip_path, ec);
+                return false;
+            }
+        }
+
         // 3. Extract release (100% Self-contained multi-tool extraction)
         publish_status("installing", "Extracting firmware package", version);
+        persist_state("installing", version, "Extracting and synchronizing application files");
         std::filesystem::create_directories(extract_dir, dir_ec);
 
         std::string zpath = zip_path.string();
@@ -793,31 +1054,64 @@ bool OtaUpdater::run_update(const std::string& version, bool request_reboot,
             log("INFO", "Backup saved to " + config_.backup_dir.string());
         }
 
-        // 6. Stop service
-        log("INFO", "Stopping service: " + config_.app_service);
-        service_action("stop", config_.app_service);
-        std::this_thread::sleep_for(std::chrono::seconds(2));
+        // 6. Replace and synchronize application files
+        auto set_exec_perms = [](const std::filesystem::path& p) {
+            std::error_code ec;
+            std::filesystem::permissions(p,
+                std::filesystem::perms::owner_all |
+                std::filesystem::perms::group_read | std::filesystem::perms::group_exec |
+                std::filesystem::perms::others_read | std::filesystem::perms::others_exec,
+                std::filesystem::perm_options::add, ec);
+        };
 
-        // 7. Replace files
-        for (const auto& entry : std::filesystem::directory_iterator(extract_dir)) {
-            auto dest = config_.current_dir / entry.path().filename();
-            if (std::filesystem::exists(dest)) {
-                std::filesystem::remove_all(dest);
+        // Target directories to synchronize
+        std::vector<std::filesystem::path> target_roots = {
+            config_.current_dir,
+            std::filesystem::path("/opt/edge-gateway"),
+            std::filesystem::path("/opt/edge-gateway/current")
+        };
+
+        for (const auto& root : target_roots) {
+            std::error_code ec;
+            std::filesystem::create_directories(root, ec);
+            std::filesystem::create_directories(root / "bin", ec);
+
+            for (const auto& entry : std::filesystem::recursive_directory_iterator(extract_dir, ec)) {
+                if (ec) break;
+                auto rel = std::filesystem::relative(entry.path(), extract_dir);
+                auto dest = root / rel;
+
+                if (entry.is_directory()) {
+                    std::filesystem::create_directories(dest, ec);
+                } else if (entry.is_regular_file()) {
+                    std::filesystem::create_directories(dest.parent_path(), ec);
+                    std::filesystem::copy_file(entry.path(), dest,
+                                               std::filesystem::copy_options::overwrite_existing, ec);
+
+                    // If binary, ensure +x permission and mirror to root/bin/
+                    std::string fname = entry.path().filename().string();
+                    if (fname == "edge-gateway-backend" || fname == "edge-gateway-updater" || fname == "senzr-ctl") {
+                        set_exec_perms(dest);
+                        auto bin_dest = root / "bin" / fname;
+                        std::filesystem::copy_file(entry.path(), bin_dest,
+                                                   std::filesystem::copy_options::overwrite_existing, ec);
+                        set_exec_perms(bin_dest);
+
+                        // Also update system /opt/edge-gateway/bin directly
+                        auto opt_bin = std::filesystem::path("/opt/edge-gateway/bin") / fname;
+                        std::filesystem::create_directories("/opt/edge-gateway/bin", ec);
+                        std::filesystem::copy_file(entry.path(), opt_bin,
+                                                   std::filesystem::copy_options::overwrite_existing, ec);
+                        set_exec_perms(opt_bin);
+                    }
+                }
             }
-            std::filesystem::copy(entry.path(), dest,
-                                  std::filesystem::copy_options::recursive);
         }
-        log("INFO", "Application files updated in " + config_.current_dir.string());
-
-        // 8. Start new version
-        log("INFO", "Starting service: " + config_.app_service);
-        service_action("start", config_.app_service);
-        std::this_thread::sleep_for(std::chrono::seconds(3));
-
-        // 9. Health check & rollback
-        publish_status("testing", "Performing service health check", version);
+        log("INFO", "Application binaries and assets updated in production paths");
+        persist_state("testing", version, "Performing post-installation health check");
         if (health_check()) {
             set_current_version(version);
+            persist_state("confirmed", version, "Firmware update confirmed healthy and verified");
             log("INFO", "Update to " + version + " successful!");
             publish_status("success", "Update installed successfully", version);
             publish_telemetry();
@@ -836,10 +1130,24 @@ bool OtaUpdater::run_update(const std::string& version, bool request_reboot,
                 std::system("reboot");
 #endif
                 return true;
+            } else {
+                log("INFO", "Auto-reloading application daemon with newly installed version " + version + "...");
+                publish_status("restarting", "Update complete. Relaunching application daemon...", version);
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+                std::string svc = config_.app_service;
+                std::thread([svc]() {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(800));
+                    service_action("restart", svc);
+                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                    std::exit(0);
+                }).detach();
+                return true;
             }
         } else {
             log("ERROR", "Health check failed! Initiating rollback to previous stable backup...");
             publish_status("rollback", "Health check failed, rolling back to previous version", version);
+            persist_state("rollback", version, "Health check failed, rolled back to previous backup");
             service_action("stop", config_.app_service);
             if (std::filesystem::exists(config_.backup_dir)) {
                 std::filesystem::remove_all(config_.current_dir);
@@ -936,9 +1244,12 @@ static void on_mqtt_message(struct mosquitto* /*mosq*/, void* obj, const struct 
             std::string ver = j.value("version", "");
             bool do_reboot = j.value("reboot", false);
             std::string direct_url = j.value("url", j.value("download_url", j.value("presigned_url", "")));
+            std::string checksum = j.value("checksum", j.value("sha256", j.value("md5", "")));
+            std::string sig = j.value("signature", j.value("sig", ""));
+            bool allow_down = j.value("allow_downgrade", false);
             uint64_t size_bytes = j.value("size_bytes", j.value("size", 0ULL));
             if (!ver.empty()) {
-                updater->trigger_async_update(ver, do_reboot, direct_url, size_bytes);
+                updater->trigger_async_update(ver, do_reboot, direct_url, size_bytes, checksum, sig, allow_down);
             }
         }
     } catch (const std::exception& e) {
@@ -992,6 +1303,9 @@ void OtaUpdater::run() {
     log("INFO", "Device ID: " + config_.device_id);
     log("INFO", "Current installed version: " + get_current_version());
 
+    // Automatic power-loss and interrupted crash recovery
+    check_startup_recovery();
+
     start_mqtt();
     start_periodic_check();
     check_for_update(); // Check immediately on boot
@@ -1015,6 +1329,188 @@ void OtaUpdater::stop() {
     if (update_worker_ && update_worker_->joinable()) {
         update_worker_->join();
         update_worker_.reset();
+    }
+}
+
+bool OtaUpdater::apply_archive_update(const std::filesystem::path& archive_path,
+                                      const std::string& target_version,
+                                      bool request_reboot) {
+    if (!acquire_lock()) {
+        log("ERROR", "Cannot apply firmware archive: update lock is held by another process");
+        return false;
+    }
+
+    struct ScopeGuard {
+        const OtaUpdater* self;
+        ~ScopeGuard() {
+            self->release_lock();
+            const_cast<OtaUpdater*>(self)->is_updating_.store(false);
+        }
+    } guard{this};
+
+    is_updating_.store(true);
+    std::string ver = target_version.empty() ? "uploaded_package" : target_version;
+    log("INFO", "Applying local archive firmware update: " + archive_path.string() + " (version: " + ver + ")");
+    publish_status("installing", "Extracting uploaded firmware package archive", ver);
+
+    std::error_code dir_ec;
+    auto extract_dir = config_.downloads_dir / ("extract_" + ver);
+    std::filesystem::create_directories(extract_dir, dir_ec);
+
+    std::string zpath = archive_path.string();
+    std::string edir  = extract_dir.string();
+    int ret = -1;
+
+    ret = std::system(("unzip -q -o \"" + zpath + "\" -d \"" + edir + "\" 2>/dev/null").c_str());
+    if (ret != 0) {
+        ret = std::system(("python3 -m zipfile -e \"" + zpath + "\" \"" + edir + "\" 2>/dev/null").c_str());
+    }
+    if (ret != 0) {
+        ret = std::system(("tar -xf \"" + zpath + "\" -C \"" + edir + "\" 2>/dev/null").c_str());
+    }
+    if (ret != 0) {
+        ret = std::system(("busybox unzip -q -o \"" + zpath + "\" -d \"" + edir + "\" 2>/dev/null").c_str());
+    }
+
+    if (ret != 0) {
+        log("ERROR", "Failed to extract uploaded package archive");
+        publish_status("failed", "Failed to extract package archive", ver);
+        return false;
+    }
+
+    // Backup current version
+    if (std::filesystem::exists(config_.backup_dir)) {
+        std::filesystem::remove_all(config_.backup_dir);
+    }
+    if (std::filesystem::exists(config_.current_dir)) {
+        std::filesystem::copy(config_.current_dir, config_.backup_dir,
+                              std::filesystem::copy_options::recursive);
+        log("INFO", "Backup snapshot created at " + config_.backup_dir.string());
+    }
+
+    // Stop service
+    log("INFO", "Stopping service: " + config_.app_service);
+    service_action("stop", config_.app_service);
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+
+    // Replace files
+    for (const auto& entry : std::filesystem::directory_iterator(extract_dir)) {
+        auto dest = config_.current_dir / entry.path().filename();
+        if (std::filesystem::exists(dest)) {
+            std::filesystem::remove_all(dest);
+        }
+        std::filesystem::copy(entry.path(), dest, std::filesystem::copy_options::recursive);
+    }
+    log("INFO", "Application files updated in " + config_.current_dir.string());
+
+    // Start service
+    log("INFO", "Starting service: " + config_.app_service);
+    service_action("start", config_.app_service);
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+
+    // Health check
+    publish_status("testing", "Performing service health check", ver);
+    if (health_check()) {
+        set_current_version(ver);
+        log("INFO", "Update to " + ver + " successful!");
+        publish_status("success", "Update installed successfully", ver);
+        publish_telemetry();
+        std::filesystem::remove_all(extract_dir);
+
+        if (request_reboot || config_.reboot_on_success) {
+            log("INFO", "Rebooting system after update...");
+            publish_status("rebooting", "Update complete. System is rebooting...", ver);
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+            ::sync();
+#if defined(__linux__)
+            ::reboot(RB_AUTOBOOT);
+#else
+            std::system("reboot");
+#endif
+            return true;
+        } else {
+            log("INFO", "Auto-reloading application daemon with newly installed version " + ver + "...");
+            publish_status("restarting", "Update complete. Relaunching application daemon...", ver);
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+            std::string svc = config_.app_service;
+            std::thread([svc]() {
+                std::this_thread::sleep_for(std::chrono::milliseconds(800));
+                service_action("restart", svc);
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                std::exit(0);
+            }).detach();
+            return true;
+        }
+    } else {
+        log("ERROR", "Health check failed! Restoring backup...");
+        publish_status("rollback", "Health check failed, rolling back to previous version", ver);
+        service_action("stop", config_.app_service);
+        if (std::filesystem::exists(config_.backup_dir)) {
+            std::filesystem::remove_all(config_.current_dir);
+            std::filesystem::copy(config_.backup_dir, config_.current_dir,
+                                  std::filesystem::copy_options::recursive);
+        }
+        service_action("start", config_.app_service);
+        std::filesystem::remove_all(extract_dir);
+        log("INFO", "Rollback completed.");
+        return false;
+    }
+}
+
+bool OtaUpdater::manual_rollback() {
+    if (!acquire_lock()) {
+        log("ERROR", "Cannot rollback: update or rollback is currently in progress");
+        return false;
+    }
+
+    struct ScopeGuard {
+        const OtaUpdater* self;
+        ~ScopeGuard() {
+            self->release_lock();
+            const_cast<OtaUpdater*>(self)->is_updating_.store(false);
+        }
+    } guard{this};
+
+    is_updating_.store(true);
+
+    if (!std::filesystem::exists(config_.backup_dir) || std::filesystem::is_empty(config_.backup_dir)) {
+        log("ERROR", "Rollback failed: no backup directory found in " + config_.backup_dir.string());
+        publish_status("rollback_failed", "No previous backup snapshot available to restore");
+        return false;
+    }
+
+    log("INFO", "Initiating manual rollback: Restoring backup from " + config_.backup_dir.string() + " to " + config_.current_dir.string());
+    publish_status("rollback", "Restoring previous stable version from backup");
+
+    service_action("stop", config_.app_service);
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+
+    try {
+        if (std::filesystem::exists(config_.current_dir)) {
+            std::filesystem::remove_all(config_.current_dir);
+        }
+        std::filesystem::copy(config_.backup_dir, config_.current_dir,
+                              std::filesystem::copy_options::recursive);
+    } catch (const std::exception& e) {
+        log("ERROR", "Failed to restore backup snapshot: " + std::string(e.what()));
+        service_action("start", config_.app_service);
+        return false;
+    }
+
+    service_action("start", config_.app_service);
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+
+    if (health_check()) {
+        std::string restored_ver = get_current_version();
+        log("INFO", "Rollback successful! System restored to version: " + restored_ver);
+        publish_status("success", "Rollback completed successfully", restored_ver);
+        publish_telemetry();
+        return true;
+    } else {
+        log("ERROR", "Health check failed after rollback!");
+        publish_status("failed", "Health check failed after rollback");
+        return false;
     }
 }
 

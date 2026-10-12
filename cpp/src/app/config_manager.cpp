@@ -19,7 +19,7 @@ ConfigModel ConfigManager::read_config() const {
 
     ConfigModel cfg;
     cfg.devicename         = j.value("devicename",         "");
-    cfg.mode               = j.value("mode",               "object");
+    cfg.mode               = j.value("mode",               "traffic");
     cfg.timezone           = j.value("timezone",           "Asia/Kolkata");
     cfg.wifissid           = j.value("wifissid",           "");
     cfg.wifipassword       = j.value("wifipassword",       "");

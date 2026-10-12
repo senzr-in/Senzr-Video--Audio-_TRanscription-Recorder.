@@ -1,21 +1,18 @@
 #pragma once
 
-#include "senzr/export.hpp"
 #include "senzr/types.hpp"
 #include "senzr/error.hpp"
 #include <string>
-#include <string_view>
 #include <vector>
 #include <memory>
 #include <optional>
 
 namespace senzr {
-inline namespace v1 {
 
 /**
  * @brief Configuration settings for the embedded SQLite/SQLCipher offline storage engine.
  */
-struct SENZR_API StorageConfig {
+struct StorageConfig {
     std::string db_path{"database/edge_gateway.db"};
     int busy_timeout_ms{5000};
     bool enable_wal{true};
@@ -24,7 +21,7 @@ struct SENZR_API StorageConfig {
 /**
  * @brief Normalized event record stored offline for audit trails and cloud synchronization.
  */
-struct SENZR_API StorageEvent {
+struct StorageEvent {
     std::string event_id;
     std::string session_id;
     std::string event_type;
@@ -36,7 +33,7 @@ struct SENZR_API StorageEvent {
 /**
  * @brief Resilient upload job entry in the crash-recovery queue.
  */
-struct SENZR_API StorageUploadJob {
+struct StorageUploadJob {
     int id{0};
     std::string session_id;
     std::string file_path;
@@ -49,7 +46,7 @@ struct SENZR_API StorageUploadJob {
 /**
  * @brief Thread-safe, crash-resilient SQLite storage engine with WAL mode and transaction support.
  */
-class SENZR_API Storage {
+class Storage {
 public:
     explicit Storage(StorageConfig config = {});
     ~Storage();
@@ -60,28 +57,27 @@ public:
     Storage& operator=(Storage&&) noexcept;
 
     // ── Connection Lifecycle ──────────────────────────────────────────────────
-    [[nodiscard]] Result<void> open();
+    Result<void> open();
     [[nodiscard]] bool is_open() const noexcept;
     void close();
 
     // ── Event Operations ──────────────────────────────────────────────────────
-    [[nodiscard]] Result<void> log_event(const StorageEvent& event);
-    [[nodiscard]] Result<std::vector<StorageEvent>> get_recent_events(int limit = 50);
+    Result<void> log_event(const StorageEvent& event);
+    Result<std::vector<StorageEvent>> get_recent_events(int limit = 50);
 
     // ── Durable Upload Queue (Crash-Recovery) ──────────────────────────────────
-    [[nodiscard]] Result<void> enqueue_upload(const std::string& session_id,
-                                              const std::string& file_path,
-                                              const std::string& file_type);
-    [[nodiscard]] Result<void> mark_upload_done(int job_id);
-    [[nodiscard]] Result<void> mark_upload_failed(int job_id, const std::string& error_msg);
+    Result<void> enqueue_upload(const std::string& session_id,
+                                const std::string& file_path,
+                                const std::string& file_type);
+    Result<void> mark_upload_done(int job_id);
+    Result<void> mark_upload_failed(int job_id, const std::string& error_msg);
 
     // ── Maintenance ───────────────────────────────────────────────────────────
-    [[nodiscard]] Result<void> vacuum_old_records(int keep_days = 14);
+    Result<void> vacuum_old_records(int keep_days = 14);
 
 private:
     struct Impl;
     std::unique_ptr<Impl> pimpl_;
 };
 
-} // namespace v1
 } // namespace senzr

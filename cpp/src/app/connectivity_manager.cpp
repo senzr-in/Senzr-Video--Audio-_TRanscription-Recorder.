@@ -6,10 +6,40 @@
 #include <algorithm>
 #include <thread>
 #include <chrono>
+#include <regex>
+#include <cctype>
 
 namespace app {
 
 using json = nlohmann::json;
+
+namespace {
+
+static std::string strip_ansi(const std::string& input) {
+    static const std::regex ansi_regex("\x1b\\[[0-9;]*[a-zA-Z]");
+    return std::regex_replace(input, ansi_regex, "");
+}
+
+static std::string trim_str(const std::string& str) {
+    auto first = str.find_first_not_of(" \t\r\n\"");
+    if (first == std::string::npos) return "";
+    auto last = str.find_last_not_of(" \t\r\n\"");
+    return str.substr(first, (last - first + 1));
+}
+
+static bool is_valid_mac(const std::string& mac) {
+    if (mac.length() != 17) return false;
+    for (int i = 0; i < 17; ++i) {
+        if (i % 3 == 2) {
+            if (mac[i] != ':') return false;
+        } else {
+            if (!std::isxdigit(static_cast<unsigned char>(mac[i]))) return false;
+        }
+    }
+    return true;
+}
+
+} // anonymous namespace
 
 ConnectivityManager::ConnectivityManager() = default;
 
@@ -366,23 +396,22 @@ BluetoothStatus ConnectivityManager::get_bluetooth_status() const {
         output = exec_cmd("bluetoothctl show 2>/dev/null");
     }
 
-    std::istringstream stream(output);
-    std::string line;
+    std::istringstream stream(strip_ansi(output));
+    std::string raw_line;
 
-    while (std::getline(stream, line)) {
+    while (std::getline(stream, raw_line)) {
+        std::string line = trim_str(raw_line);
         if (line.find("Powered: yes") != std::string::npos) status.enabled = true;
         if (line.find("Discoverable: yes") != std::string::npos) status.discoverable = true;
         if (line.find("Name:") != std::string::npos) {
             auto pos = line.find("Name:");
-            status.adapter_name = line.substr(pos + 5);
-            auto s = status.adapter_name.find_first_not_of(" \t\r\n");
-            if (s != std::string::npos) status.adapter_name = status.adapter_name.substr(s);
+            status.adapter_name = trim_str(line.substr(pos + 5));
         }
         if (line.find("Controller ") != std::string::npos) {
             std::stringstream ss(line);
             std::string prefix, mac;
             ss >> prefix >> mac;
-            status.mac_address = mac;
+            status.mac_address = trim_str(mac);
         }
     }
 
@@ -392,19 +421,23 @@ BluetoothStatus ConnectivityManager::get_bluetooth_status() const {
 
     // Query paired devices
     std::string paired_out = exec_cmd("bluetoothctl devices Paired 2>/dev/null");
-    std::istringstream p_stream(paired_out);
-    while (std::getline(p_stream, line)) {
+    std::istringstream p_stream(strip_ansi(paired_out));
+    while (std::getline(p_stream, raw_line)) {
+        std::string line = trim_str(raw_line);
         if (line.rfind("Device ", 0) == 0) {
             std::stringstream ss(line);
             std::string tag, mac, name;
             ss >> tag >> mac;
             std::getline(ss, name);
-            name.erase(0, name.find_first_not_of(" \t\r\n"));
-            BluetoothDevice dev;
-            dev.address = mac;
-            dev.name = name.empty() ? "Paired Device" : name;
-            dev.paired = true;
-            status.connected_devices.push_back(dev);
+            mac = trim_str(mac);
+            name = trim_str(name);
+            if (is_valid_mac(mac)) {
+                BluetoothDevice dev;
+                dev.address = mac;
+                dev.name = name.empty() ? "Paired Device" : name;
+                dev.paired = true;
+                status.connected_devices.push_back(dev);
+            }
         }
     }
 
@@ -433,41 +466,77 @@ std::vector<BluetoothDevice> ConnectivityManager::scan_bluetooth_devices(int sca
 
     // 1. Ensure Bluetooth is unblocked and powered up
     exec_cmd("rfkill unblock bluetooth 2>/dev/null; hciconfig hci0 up 2>/dev/null; bluetoothctl power on 2>/dev/null");
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
-    // 2. Trigger active Bluetooth discovery and capture live output
-    std::string scan_cmd = "timeout " + std::to_string(scan_seconds) + " bluetoothctl scan on 2>&1";
+    // 2. Trigger active Bluetooth discovery with BlueZ built-in timeout or fallback timeout
+    std::string scan_cmd = "bluetoothctl --timeout " + std::to_string(scan_seconds) + " scan on 2>&1";
     std::string scan_output = exec_cmd(scan_cmd);
+    if (scan_output.empty() || scan_output.find("Invalid option") != std::string::npos) {
+        scan_output = exec_cmd("timeout " + std::to_string(scan_seconds) + " bluetoothctl scan on 2>&1");
+    }
 
-    // 3. Query all discovered devices from BlueZ cache
+    // 3. Ensure discovery mode is closed to prevent org.bluez.Error.InProgress locks
+    exec_cmd("bluetoothctl scan off 2>/dev/null");
+
+    // 4. Query all discovered & cached devices from BlueZ
     std::string devices_output = exec_cmd("bluetoothctl devices 2>/dev/null");
-    
-    std::string combined = scan_output + "\n" + devices_output;
-    std::istringstream stream(combined);
-    std::string line;
 
-    while (std::getline(stream, line)) {
+    // 5. Fallback scan with hcitool if BlueZ output is completely empty
+    std::string hci_output;
+    if (scan_output.empty() && devices_output.empty()) {
+        hci_output = exec_cmd("hcitool scan 2>/dev/null");
+    }
+    
+    std::string combined = scan_output + "\n" + devices_output + "\n" + hci_output;
+    std::istringstream stream(strip_ansi(combined));
+    std::string raw_line;
+
+    while (std::getline(stream, raw_line)) {
+        std::string line = trim_str(raw_line);
+        if (line.empty()) continue;
+
+        // Look for Device MAC marker
         auto dev_pos = line.find("Device ");
         if (dev_pos != std::string::npos) {
             std::string sub = line.substr(dev_pos + 7);
             std::stringstream ss(sub);
-            std::string mac, name;
+            std::string mac, rest;
             ss >> mac;
-            std::getline(ss, name);
-            
-            auto start = name.find_first_not_of(" \t\r\n");
-            if (start != std::string::npos) {
-                name = name.substr(start);
-            } else {
-                name = "Bluetooth Device";
+            std::getline(ss, rest);
+            mac = trim_str(mac);
+            rest = trim_str(rest);
+
+            // Handle [CHG] Device MAC Name: RealName
+            if (rest.rfind("Name: ", 0) == 0) {
+                rest = trim_str(rest.substr(6));
+            } else if (rest.rfind("Alias: ", 0) == 0) {
+                rest = trim_str(rest.substr(7));
+            } else if (rest.find(':') != std::string::npos && 
+                      (rest.find("RSSI:") != std::string::npos ||
+                       rest.find("TxPower:") != std::string::npos ||
+                       rest.find("ManufacturerData") != std::string::npos ||
+                       rest.find("UUIDs:") != std::string::npos ||
+                       rest.find("Connected:") != std::string::npos ||
+                       rest.find("ServicesResolved:") != std::string::npos ||
+                       rest.find("Modalias:") != std::string::npos ||
+                       rest.find("Class:") != std::string::npos ||
+                       rest.find("Icon:") != std::string::npos ||
+                       rest.find("Paired:") != std::string::npos ||
+                       rest.find("Trusted:") != std::string::npos ||
+                       rest.find("Blocked:") != std::string::npos ||
+                       rest.find("LegacyPairing:") != std::string::npos)) {
+                // Ignore metadata property updates that are not device names
+                rest = "";
             }
 
-            // Filter out internal telemetry tokens
-            if (name.find("RSSI") == std::string::npos &&
-                name.find("TxPower") == std::string::npos &&
-                name.find("ManufacturerData") == std::string::npos &&
-                mac.find(':') != std::string::npos &&
-                mac.length() >= 17) {
-                
+            // If rest is just the MAC address with hyphens (e.g. "00-11-22-33-44-55"), treat as generic
+            std::string dashed_mac = mac;
+            std::replace(dashed_mac.begin(), dashed_mac.end(), ':', '-');
+            if (rest == dashed_mac || rest.empty()) {
+                rest = "Bluetooth Device";
+            }
+
+            if (is_valid_mac(mac)) {
                 auto it = std::find_if(devices.begin(), devices.end(), [&](const BluetoothDevice& d) {
                     return d.address == mac;
                 });
@@ -475,9 +544,30 @@ std::vector<BluetoothDevice> ConnectivityManager::scan_bluetooth_devices(int sca
                 if (it == devices.end()) {
                     BluetoothDevice dev;
                     dev.address = mac;
-                    dev.name = name;
+                    dev.name = rest;
                     devices.push_back(dev);
-                } else if (it->name == "Bluetooth Device" && name != "Bluetooth Device") {
+                } else if ((it->name == "Bluetooth Device" || it->name.empty()) && rest != "Bluetooth Device" && !rest.empty()) {
+                    it->name = rest;
+                }
+            }
+        } else if (line.find('\t') != std::string::npos) {
+            // Fallback parsing for `hcitool scan` output: "\t XX:XX:XX:XX:XX:XX \t Device Name"
+            std::stringstream ss(line);
+            std::string mac, name;
+            ss >> mac;
+            std::getline(ss, name);
+            mac = trim_str(mac);
+            name = trim_str(name);
+            if (is_valid_mac(mac)) {
+                auto it = std::find_if(devices.begin(), devices.end(), [&](const BluetoothDevice& d) {
+                    return d.address == mac;
+                });
+                if (it == devices.end()) {
+                    BluetoothDevice dev;
+                    dev.address = mac;
+                    dev.name = name.empty() ? "Bluetooth Device" : name;
+                    devices.push_back(dev);
+                } else if (it->name == "Bluetooth Device" && !name.empty()) {
                     it->name = name;
                 }
             }
@@ -487,14 +577,15 @@ std::vector<BluetoothDevice> ConnectivityManager::scan_bluetooth_devices(int sca
 }
 
 bool ConnectivityManager::pair_bluetooth_device(const std::string& address, std::string& error_msg) {
-    std::string cmd = "bluetoothctl pair " + address + " 2>&1";
+    std::string clean_addr = trim_str(strip_ansi(address));
+    std::string cmd = "bluetoothctl pair " + clean_addr + " 2>&1";
     std::string output = exec_cmd(cmd);
-    if (output.find("Pairing successful") != std::string::npos) {
-        exec_cmd("bluetoothctl trust " + address);
-        exec_cmd("bluetoothctl connect " + address);
+    if (output.find("Pairing successful") != std::string::npos || output.find("Already Paired") != std::string::npos) {
+        exec_cmd("bluetoothctl trust " + clean_addr);
+        exec_cmd("bluetoothctl connect " + clean_addr);
         return true;
     }
-    error_msg = output;
+    error_msg = strip_ansi(output);
     return false;
 }
 

@@ -2,9 +2,7 @@
 #include <atomic>
 #include <filesystem>
 
-namespace senzr {
-inline namespace v1 {
-namespace media {
+namespace senzr::media {
 
 struct Recorder::Impl {
     RecorderConfig config;
@@ -51,6 +49,4 @@ bool Recorder::is_recording() const noexcept {
     return pimpl_ && pimpl_->recording.load();
 }
 
-} // namespace media
-} // namespace v1
-} // namespace senzr
+} // namespace senzr::media

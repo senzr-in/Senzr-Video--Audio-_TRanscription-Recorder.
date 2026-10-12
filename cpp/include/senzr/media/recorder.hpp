@@ -1,20 +1,17 @@
 #pragma once
 
-#include "senzr/export.hpp"
 #include "senzr/types.hpp"
 #include "senzr/error.hpp"
 #include "senzr/ai/types.hpp"
 #include <string>
 #include <memory>
 
-namespace senzr {
-inline namespace v1 {
-namespace media {
+namespace senzr::media {
 
 /**
  * @brief Video recorder encoding configuration.
  */
-struct SENZR_API RecorderConfig {
+struct RecorderConfig {
     std::string output_dir{"/opt/edge-gateway/recordings"};
     int width{640};
     int height{480};
@@ -25,7 +22,7 @@ struct SENZR_API RecorderConfig {
 /**
  * @brief Thread-safe event-driven media recorder.
  */
-class SENZR_API Recorder {
+class Recorder {
 public:
     explicit Recorder(RecorderConfig config = {});
     ~Recorder();
@@ -36,9 +33,9 @@ public:
     Recorder& operator=(Recorder&&) noexcept;
 
     // ── Recording Lifecycle ───────────────────────────────────────────────────
-    [[nodiscard]] Result<void> start(const std::string& session_id);
-    [[nodiscard]] Result<void> write_frame(const ai::FrameView& frame);
-    [[nodiscard]] Result<std::string> stop(); // Returns path to recorded MP4 file
+    Result<void> start(const std::string& session_id);
+    Result<void> write_frame(const ai::FrameView& frame);
+    Result<std::string> stop(); // Returns path to recorded MP4 file
     [[nodiscard]] bool is_recording() const noexcept;
 
 private:
@@ -46,6 +43,4 @@ private:
     std::unique_ptr<Impl> pimpl_;
 };
 
-} // namespace media
-} // namespace v1
-} // namespace senzr
+} // namespace senzr::media

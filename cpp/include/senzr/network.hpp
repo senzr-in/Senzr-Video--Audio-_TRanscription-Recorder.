@@ -1,6 +1,5 @@
 #pragma once
 
-#include "senzr/export.hpp"
 #include "senzr/types.hpp"
 #include "senzr/error.hpp"
 #include <string>
@@ -8,14 +7,12 @@
 #include <memory>
 #include <optional>
 
-namespace senzr {
-inline namespace v1 {
-namespace net {
+namespace senzr::net {
 
 /**
  * @brief Current status of physical Ethernet network interfaces.
  */
-struct SENZR_API EthernetStatus {
+struct EthernetStatus {
     bool connected{false};
     std::string ip_address;
     std::string interface_name{"eth0"};
@@ -28,7 +25,7 @@ struct SENZR_API EthernetStatus {
 /**
  * @brief Current status of the Wi-Fi interface.
  */
-struct SENZR_API WifiStatus {
+struct WifiStatus {
     bool connected{false};
     std::string ssid;
     std::string ip_address;
@@ -39,7 +36,7 @@ struct SENZR_API WifiStatus {
 /**
  * @brief Information about a discovered Wi-Fi Access Point.
  */
-struct SENZR_API WifiNetwork {
+struct WifiNetwork {
     std::string ssid;
     int signal_strength{0};
     std::string security;
@@ -49,45 +46,40 @@ struct SENZR_API WifiNetwork {
 /**
  * @brief Thread-safe Network Management API covering Ethernet, Wi-Fi Station, and Wi-Fi AP Hotspot modes.
  */
-class SENZR_API Manager {
+class Manager {
 public:
     static Manager& get_instance();
 
     // ── Interface Status Queries ──────────────────────────────────────────────
-    [[nodiscard]] Result<EthernetStatus> get_ethernet_status(const std::string& iface = "eth0");
-    [[nodiscard]] Result<WifiStatus> get_wifi_status(const std::string& iface = "wlan0");
+    Result<EthernetStatus> get_ethernet_status(const std::string& iface = "eth0");
+    Result<WifiStatus> get_wifi_status(const std::string& iface = "wlan0");
 
     // ── Wi-Fi Operations ──────────────────────────────────────────────────────
-    [[nodiscard]] Result<std::vector<WifiNetwork>> scan_wifi();
-    [[nodiscard]] Result<void> connect_wifi(const std::string& ssid, const std::string& password);
-    [[nodiscard]] Result<void> disconnect_wifi();
+    Result<std::vector<WifiNetwork>> scan_wifi();
+    Result<void> connect_wifi(const std::string& ssid, const std::string& password);
+    Result<void> disconnect_wifi();
 
     // ── Local Hotspot / Captive Portal Provisioning ───────────────────────────
-    [[nodiscard]] Result<void> start_hotspot(const std::string& ssid = "Senzr-Edge-AP",
-                                             const std::string& password = "");
-    [[nodiscard]] Result<void> stop_hotspot();
+    Result<void> start_hotspot(const std::string& ssid = "Senzr-Edge-AP",
+                               const std::string& password = "");
+    Result<void> stop_hotspot();
     [[nodiscard]] bool is_hotspot_active() const;
 
     // Backward-compatibility alias
     static Manager& instance() { return get_instance(); }
 
+private:
+    Manager();
     ~Manager();
     Manager(const Manager&) = delete;
     Manager& operator=(const Manager&) = delete;
-    Manager(Manager&&) noexcept;
-    Manager& operator=(Manager&&) noexcept;
-
-private:
-    Manager();
 
     struct Impl;
     std::unique_ptr<Impl> pimpl_;
 };
 
-[[nodiscard]] inline Manager& get_manager() {
+inline Manager& get_manager() {
     return Manager::get_instance();
 }
 
-} // namespace net
-} // namespace v1
-} // namespace senzr
+} // namespace senzr::net

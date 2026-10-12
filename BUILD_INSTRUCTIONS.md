@@ -53,8 +53,10 @@ Once logged in via SSH:
 cd /home/orangepi/edge-gateway/cpp
 ```
 
-### 2. Create and enter the build directory:
+### 2. Clean old cache and create build directory:
 ```bash
+# Remove any cached CMake paths from other machines
+rm -rf build
 mkdir -p build
 cd build
 ```

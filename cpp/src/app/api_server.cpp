@@ -1,6 +1,7 @@
 #include "app/api_server.hpp"
 #include "app/ntp_client.hpp"
 #include "app/gpio_manager.hpp"
+#include "app/ble_access_manager.hpp"
 #include "session_pipeline/config.hpp"
 #include <iostream>
 #include <sstream>
@@ -68,6 +69,7 @@ static bool has_camera_device() {
 
 ApiServer::ApiServer() {
     ota_updater_ = std::make_shared<app::OtaUpdater>();
+    BleAccessManager::instance().start(&database_, &gpio_manager_);
 }
 
 // ── JSON helpers ─────────────────────────────────────────────────────────────
@@ -270,6 +272,7 @@ public:
 
     std::vector<ModelInfo> get_available_models() {
         return {
+            {"yolo11s_traffic", "YOLO11s Vehicle, Emergency & ANPR (C2PSA High-Precision)", "Traffic & Emergency AI", "YOLO11s-INT8", "640x640x3", 11.8f, "Core 0", 21080000, true},
             {"yolov8_plate_hd", "YOLOv8-Plate-HD (High-Accuracy Plate Locator)", "Plate Localization", "YOLOv8-Plate-INT8", "640x640x3", 6.8f, "Core 0", 8388608, true},
             {"ppocrv4_plate_highacc", "PP-OCRv4 High-Accuracy Plate Reader (SVTR)", "ANPR OCR High-Acc", "PP-OCRv4-SVTR-INT8", "48x320x3", 4.5f, "Core 1", 12582912, true},
             {"yolov8_vehicle", "YOLOv8 Vehicle Detector (Car/Bus/Truck)", "Vehicle Detection", "YOLOv8-Vehicle-INT8", "640x640x3", 7.5f, "Core 0", 8650752, true},
@@ -674,6 +677,83 @@ void ApiServer::register_routes(httplib::Server& srv) {
         std::string err;
         bool ok = connectivity_manager_.pair_bluetooth_device(addr, err);
         res.set_content(json{{"ok", ok}, {"message", ok ? "Paired" : err}}.dump(), "application/json");
+    });
+
+    // ── BLE Mobile Access Handshake Endpoints ────────────────────────────────
+    srv.Post("/api/ble/challenge", [](const httplib::Request& req, httplib::Response& res) {
+        auto body = json::parse(req.body, nullptr, false);
+        std::string mac = body.value("mac", "mobile_client");
+        std::string nonce = BleAccessManager::instance().generate_challenge(mac);
+        res.set_content(json{
+            {"ok", true},
+            {"mac", mac},
+            {"nonce", nonce},
+            {"service_uuid", BleAccessManager::SERVICE_UUID},
+            {"challenge_uuid", BleAccessManager::CHALLENGE_UUID},
+            {"response_uuid", BleAccessManager::RESPONSE_UUID},
+            {"expires_in_sec", 5}
+        }.dump(2), "application/json");
+    });
+
+    srv.Post("/api/ble/authenticate", [this](const httplib::Request& req, httplib::Response& res) {
+        auto body = json::parse(req.body, nullptr, false);
+        if (body.is_discarded()) {
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"Invalid JSON payload"})", "application/json");
+            return;
+        }
+
+        std::string mac = body.value("mac", "");
+        std::string client_resp = body.value("response", "");
+        std::string cred_hash = body.value("credential_hash", "");
+        int rssi = body.value("rssi", -65);
+
+        if (mac.empty() || client_resp.empty() || cred_hash.empty()) {
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"Missing mac, response, or credential_hash"})", "application/json");
+            return;
+        }
+
+        BleAccessManager::instance().update_rssi(mac, rssi);
+        bool authorized = BleAccessManager::instance().trigger_access_if_authorized(mac, client_resp, cred_hash);
+
+        if (authorized) {
+            database_.log_system_event("BLE_ACCESS_GRANTED", "MAC=" + mac + " RSSI=" + std::to_string(rssi), "info");
+            res.set_content(json{
+                {"ok", true},
+                {"authorized", true},
+                {"message", "Access Granted - Door Relay Pulsed"},
+                {"mac", mac},
+                {"rssi", rssi}
+            }.dump(2), "application/json");
+        } else {
+            database_.log_system_event("BLE_ACCESS_DENIED", "MAC=" + mac + " RSSI=" + std::to_string(rssi), "warn");
+            res.status = 401;
+            res.set_content(json{
+                {"ok", false},
+                {"authorized", false},
+                {"error", "Authentication failed, expired nonce, or invalid credential"}
+            }.dump(2), "application/json");
+        }
+    });
+
+    srv.Get("/api/ble/status", [](const httplib::Request&, httplib::Response& res) {
+        res.set_content(BleAccessManager::instance().status_json().dump(2), "application/json");
+    });
+
+    srv.Post("/api/ble/rssi", [](const httplib::Request& req, httplib::Response& res) {
+        auto body = json::parse(req.body, nullptr, false);
+        std::string mac = body.value("mac", "");
+        int raw_rssi = body.value("rssi", -100);
+        int smoothed = BleAccessManager::instance().update_rssi(mac, raw_rssi);
+        bool in_zone = BleAccessManager::instance().is_in_actuation_zone(mac);
+        res.set_content(json{
+            {"ok", true},
+            {"mac", mac},
+            {"raw_rssi", raw_rssi},
+            {"smoothed_rssi", smoothed},
+            {"in_actuation_zone", in_zone}
+        }.dump(2), "application/json");
     });
 
     // ── GPIO & Access Control Endpoints ─────────────────────────────────────
@@ -1428,10 +1508,15 @@ void ApiServer::register_routes(httplib::Server& srv) {
             res.set_content(R"({"error":"updater not initialized"})", "application/json");
             return;
         }
+        std::string pstate = ota_updater_->read_persisted_state();
+        if (pstate.empty()) {
+            pstate = ota_updater_->is_updating() ? "updating" : "idle";
+        }
         json out = {
             {"current_version", ota_updater_->get_current_version()},
             {"device_id",       ota_updater_->get_config().device_id},
             {"is_updating",     ota_updater_->is_updating()},
+            {"state",           pstate},
             {"s3_bucket",       ota_updater_->get_config().s3_bucket},
             {"mqtt_broker",     ota_updater_->get_config().mqtt_broker},
             {"mqtt_topic",      ota_updater_->get_config().mqtt_topic}
@@ -1479,6 +1564,9 @@ void ApiServer::register_routes(httplib::Server& srv) {
         std::string version = body.value("version", "");
         bool reboot = body.value("reboot", false);
         std::string url = body.value("url", body.value("download_url", ""));
+        std::string checksum = body.value("checksum", body.value("sha256", body.value("md5", "")));
+        std::string signature = body.value("signature", body.value("sig", ""));
+        bool allow_downgrade = body.value("allow_downgrade", false);
         uint64_t size_bytes = body.value("size_bytes", 0ULL);
 
         if (version.empty()) {
@@ -1486,6 +1574,7 @@ void ApiServer::register_routes(httplib::Server& srv) {
             if (meta) {
                 version = meta->version;
                 if (url.empty()) url = meta->download_url;
+                if (checksum.empty()) checksum = meta->checksum;
                 if (size_bytes == 0) size_bytes = meta->size_bytes;
             } else {
                 res.status = 400;
@@ -1494,12 +1583,101 @@ void ApiServer::register_routes(httplib::Server& srv) {
             }
         }
 
-        bool started = ota_updater_->trigger_async_update(version, reboot, url, size_bytes);
+        bool started = ota_updater_->trigger_async_update(version, reboot, url, size_bytes, checksum, signature, allow_downgrade);
         json out = {
             {"success", started},
             {"version", version},
             {"reboot", reboot},
             {"message", started ? "Update worker started" : "Update already running or failed to start"}
+        };
+        res.set_content(out.dump(2), "application/json");
+    });
+
+    srv.Post("/api/fota/upload", [this](const httplib::Request& req, httplib::Response& res) {
+        if (!ota_updater_) {
+            res.status = 503;
+            res.set_content(R"({"error":"updater not initialized"})", "application/json");
+            return;
+        }
+
+        std::string filename = "uploaded_firmware.zip";
+        std::string file_content;
+
+        if (req.form.has_file("file")) {
+            auto f = req.form.get_file("file");
+            filename = f.filename.empty() ? "uploaded_firmware.zip" : f.filename;
+            file_content = f.content;
+        } else if (req.form.has_file("package")) {
+            auto f = req.form.get_file("package");
+            filename = f.filename.empty() ? "uploaded_firmware.zip" : f.filename;
+            file_content = f.content;
+        } else if (req.form.has_file("firmware")) {
+            auto f = req.form.get_file("firmware");
+            filename = f.filename.empty() ? "uploaded_firmware.zip" : f.filename;
+            file_content = f.content;
+        } else if (!req.body.empty()) {
+            file_content = req.body;
+        } else {
+            res.status = 400;
+            res.set_content(R"({"error":"No firmware file provided in upload request"})", "application/json");
+            return;
+        }
+
+        std::string target_version = req.get_param_value("version");
+        if (target_version.empty()) {
+            auto pos = filename.rfind(".zip");
+            if (pos != std::string::npos) {
+                target_version = filename.substr(0, pos);
+            } else {
+                target_version = "custom_package";
+            }
+        }
+
+        bool reboot = (req.get_param_value("reboot") == "true" || req.get_param_value("reboot") == "1");
+
+        auto downloads = ota_updater_->get_config().downloads_dir;
+        std::error_code ec;
+        std::filesystem::create_directories(downloads, ec);
+        auto stage_path = downloads / filename;
+
+        std::ofstream out(stage_path, std::ios::binary);
+        if (!out.is_open()) {
+            res.status = 500;
+            res.set_content(R"({"error":"Failed to save staged package on disk"})", "application/json");
+            return;
+        }
+        out.write(file_content.data(), static_cast<std::streamsize>(file_content.size()));
+        out.close();
+
+        std::cout << "[edge-gateway] [FOTA] Direct multipart upload received (" << file_content.size() 
+                  << " bytes) -> " << stage_path.string() << "\n";
+
+        std::thread([this, stage_path, target_version, reboot]() {
+            ota_updater_->apply_archive_update(stage_path, target_version, reboot);
+        }).detach();
+
+        json out_json = {
+            {"success", true},
+            {"version", target_version},
+            {"filename", filename},
+            {"size_bytes", file_content.size()},
+            {"reboot", reboot},
+            {"message", "Firmware package uploaded and installation initiated successfully."}
+        };
+        res.set_content(out_json.dump(2), "application/json");
+    });
+
+    srv.Post("/api/fota/rollback", [this](const httplib::Request&, httplib::Response& res) {
+        if (!ota_updater_) {
+            res.status = 503;
+            res.set_content(R"({"error":"updater not initialized"})", "application/json");
+            return;
+        }
+        bool ok = ota_updater_->manual_rollback();
+        json out = {
+            {"success", ok},
+            {"current_version", ota_updater_->get_current_version()},
+            {"message", ok ? "System rolled back to previous backup successfully" : "Rollback failed or no backup snapshot exists"}
         };
         res.set_content(out.dump(2), "application/json");
     });
@@ -1605,12 +1783,21 @@ int ApiServer::run() {
     mqtt_client_.set_ota_update_handler([this](const std::string& version,
                                                const std::string& url,
                                                bool reboot,
-                                               uint64_t size_bytes) -> bool {
+                                               uint64_t size_bytes,
+                                               const std::string& checksum,
+                                               const std::string& signature,
+                                               bool allow_downgrade) -> bool {
         std::cout << "[edge-gateway] [FOTA] Downlink OTA command received: version=" << version
-                  << ", url=" << url << ", reboot=" << reboot << ", size=" << size_bytes << "\n";
+                  << ", url=" << url << ", checksum=" << checksum << ", reboot=" << reboot << ", size=" << size_bytes << "\n";
         if (!ota_updater_) return false;
-        return ota_updater_->trigger_async_update(version, reboot, url, size_bytes);
+        return ota_updater_->trigger_async_update(version, reboot, url, size_bytes, checksum, signature, allow_downgrade);
     });
+
+    std::string active_ver = ota_updater_ ? ota_updater_->get_current_version() : "1.0.6";
+    auto mqtt_init_cfg = mqtt_client_.get_config();
+    mqtt_init_cfg.app_version = active_ver;
+    mqtt_init_cfg.sys_version = active_ver;
+    mqtt_client_.update_config(mqtt_init_cfg);
 
     mqtt_client_.start();
 

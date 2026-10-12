@@ -1,9 +1,7 @@
 #include "senzr/gpio.hpp"
 #include "app/gpio_manager.hpp"
 
-namespace senzr {
-inline namespace v1 {
-namespace gpio {
+namespace senzr::gpio {
 
 struct Manager::Impl {
     app::GpioManager& backend{app::GpioManager::instance()};
@@ -11,8 +9,6 @@ struct Manager::Impl {
 
 Manager::Manager() : pimpl_(std::make_unique<Impl>()) {}
 Manager::~Manager() = default;
-Manager::Manager(Manager&&) noexcept = default;
-Manager& Manager::operator=(Manager&&) noexcept = default;
 
 Manager& Manager::get_instance() {
     static Manager inst;
@@ -159,6 +155,4 @@ std::optional<PinInfo> Manager::get_pin_info(int physical_pin) const {
     return info;
 }
 
-} // namespace gpio
-} // namespace v1
-} // namespace senzr
+} // namespace senzr::gpio

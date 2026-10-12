@@ -19,7 +19,9 @@ void print_help() {
               << "  gpio list                      List mapped RK3588 GPIO pins & aliases\n"
               << "  gpio pulse <alias|pin> [ms]    Pulse pin (e.g. DOOR_RELAY 3000)\n"
               << "  gpio write <alias|pin> <1|0>   Set pin output state\n"
-              << "  net status                     Display Ethernet and Wi-Fi interface status\n";
+              << "  net status                     Display Ethernet and Wi-Fi interface status\n"
+              << "  ble status                     Display BLE GATT service and connection status\n"
+              << "  ble start / stop               Control BLE Mobile Access advertising daemon\n";
 }
 
 int main(int argc, char* argv[]) {
@@ -103,23 +105,31 @@ int main(int argc, char* argv[]) {
 
         if (cmd == "update") {
             if (argc < 4) {
-                std::cerr << "Usage: senzr-ctl fota update <version> [--reboot] [--url <url>]\n";
+                std::cerr << "Usage: senzr-ctl fota update <version> [--reboot] [--url <url>] [--sig <signature>] [--allow-downgrade]\n";
                 return 1;
             }
             std::string ver = argv[3];
             bool reboot = false;
             std::string direct_url = "";
+            std::string signature = "";
+            bool allow_downgrade = false;
             for (int i = 4; i < argc; ++i) {
                 std::string arg = argv[i];
                 if (arg == "--reboot") reboot = true;
-                if (arg == "--url" && i + 1 < argc) {
+                if ((arg == "--url" || arg == "-u") && i + 1 < argc) {
                     direct_url = argv[++i];
+                }
+                if ((arg == "--signature" || arg == "--sig") && i + 1 < argc) {
+                    signature = argv[++i];
+                }
+                if (arg == "--allow-downgrade" || arg == "--force") {
+                    allow_downgrade = true;
                 }
             }
 
             std::cout << "[senzr-ctl] Starting update to version " << ver
                       << (reboot ? " (with post-update reboot)" : "") << "...\n";
-            auto res = client.update(ver, reboot, direct_url);
+            auto res = client.update(ver, reboot, direct_url, 0, signature, allow_downgrade);
             std::cout << (res ? "[senzr-ctl] Update successful!\n" : "[senzr-ctl] Update failed: " + res.error().message() + "\n");
             return res ? 0 : 1;
         }
@@ -203,6 +213,40 @@ int main(int argc, char* argv[]) {
                   << "  Wi-Fi Signal      : " << wifi.signal_strength_dbm << " dBm\n"
                   << "===========================================\n";
         return 0;
+    }
+
+    // ── BLE Module ───────────────────────────────────────────────────────────
+    if (module == "ble" || module == "bluetooth") {
+        auto& ble = senzr::ble::get_manager();
+
+        if (cmd == "status" || cmd.empty()) {
+            auto st = ble.get_status();
+            std::cout << "===========================================\n"
+                      << "           SENZR OS BLE STATUS             \n"
+                      << "===========================================\n"
+                      << "  GATT Service UUID: 9F82A001-7B34-4C12-8921-5092A1B2C3D4\n"
+                      << "  Challenge UUID   : 9F82A002-7B34-4C12-8921-5092A1B2C3D4\n"
+                      << "  Response UUID    : 9F82A003-7B34-4C12-8921-5092A1B2C3D4\n"
+                      << "  Advertising      : " << (st.is_advertising ? "ACTIVE (Broadcasting)" : "INACTIVE") << "\n"
+                      << "  Connected Clients: " << (st.is_connected ? "CONNECTED" : "NO ACTIVE CLIENT") << "\n"
+                      << "  Actuation Range  : Proximity Zone (>= -70 dBm)\n"
+                      << "===========================================\n";
+            return 0;
+        }
+
+        if (cmd == "start") {
+            auto res = ble.start_advertising();
+            std::cout << (res ? "[senzr-ctl] BLE Access GATT advertising started\n"
+                              : "[senzr-ctl] Failed to start BLE: " + res.error().message() + "\n");
+            return res ? 0 : 1;
+        }
+
+        if (cmd == "stop") {
+            auto res = ble.stop_advertising();
+            std::cout << (res ? "[senzr-ctl] BLE Access advertising stopped\n"
+                              : "[senzr-ctl] Failed to stop BLE: " + res.error().message() + "\n");
+            return res ? 0 : 1;
+        }
     }
 
     print_help();
