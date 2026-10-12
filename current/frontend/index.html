@@ -176,10 +176,10 @@
                     <span>🚗</span> Vehicles Only
                   </button>
                   <button id="modePlate" class="seg-pill-btn" onclick="setVisionMode('plate')">
-                    <span>🔤</span> Number Plates
+                    <span>🔤</span> Number Plates (ANPR)
                   </button>
-                  <button id="modePerson" class="seg-pill-btn" onclick="setVisionMode('person')">
-                    <span>👤</span> Persons Only
+                  <button id="modeEmergency" class="seg-pill-btn" onclick="setVisionMode('emergency')">
+                    <span>🚨</span> Emergency Vehicles
                   </button>
                 </div>
               </div>
@@ -249,9 +249,15 @@
                 </div>
 
                 <div class="stat-card">
-                  <span class="stat-label">Persons In Frame</span>
+                  <span class="stat-label">Vehicles In Frame</span>
                   <div class="stat-value font-mono" id="telPersonCount" style="color:var(--accent-emerald);">0</div>
                   <span class="stat-sub" id="telPersonConf">Confidence: -</span>
+                </div>
+
+                <div class="stat-card">
+                  <span class="stat-label">Emergency Vehicle Status</span>
+                  <div class="stat-value font-mono" id="telEmergencyStatus" style="font-size:1rem; color:var(--accent-emerald);">Normal (Clear)</div>
+                  <span class="stat-sub" id="telEmergencySub">Priority Siren / Strobe Monitor</span>
                 </div>
 
                 <div class="stat-card">
@@ -718,7 +724,8 @@
                     <span style="color:var(--accent-cyan); font-size:0.75rem;">Detection</span>
                   </label>
                   <select id="selModelCore0" class="form-input">
-                    <option value="yolov8_plate_hd" selected>🔍 YOLOv8-Plate-HD (High-Accuracy Plate Locator)</option>
+                    <option value="yolo11s_traffic" selected>🚀 YOLO11s Vehicle, Emergency & ANPR (Recommended • Core 0)</option>
+                    <option value="yolov8_plate_hd">🔍 YOLOv8-Plate-HD (High-Accuracy Plate Locator)</option>
                     <option value="yolov8_vehicle">🚗 YOLOv8 Vehicle Detector (Car/Bus/Truck)</option>
                     <option value="yolov8n">👤 YOLOv8 Nano (Person/Vehicle)</option>
                     <option value="yolov8s">🎯 YOLOv8 Small (High Precision)</option>
@@ -941,6 +948,156 @@
               </div>
             </div>
 
+            <!-- ── BLE Mobile Access, Proximity Range & Device Whitelist ── -->
+            <div class="glass-panel" id="bleAccessPanel">
+              <div class="panel-header">
+                <div>
+                  <h4 class="panel-title">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6.5 6.5l11 11L12 23V1l5.5 5.5-11 11"/></svg>
+                    BLE Mobile Access & Proximity Range
+                  </h4>
+                  <p class="panel-desc">Cryptographic Bluetooth Low Energy smartphone credential authentication & actuation radar</p>
+                </div>
+                <div style="display:flex; gap:8px; align-items:center;">
+                  <span id="bleServicePill" class="status-pill status-pill-online">GATT Active</span>
+                  <button class="btn btn-secondary btn-sm" onclick="loadBleStatusAndConfig()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                    Refresh
+                  </button>
+                </div>
+              </div>
+
+              <!-- Top Range Configuration & Simulation Grid -->
+              <div class="grid-2col" style="margin-top:12px;">
+                
+                <!-- Range Calibration Card -->
+                <div class="stat-card" style="display:flex; flex-direction:column; gap:12px;">
+                  <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label">Actuation Range Threshold</span>
+                    <span class="font-mono" id="bleRangeValue" style="color:var(--accent-cyan); font-weight:700; font-size:1.05rem;">-70 dBm (~2.5m)</span>
+                  </div>
+
+                  <div class="input-group">
+                    <label>Proximity Distance Preset</label>
+                    <select id="bleRangePreset" onchange="onBlePresetChange()">
+                      <option value="-55">Touch / Tap (&lt; 0.5 meter, -55 dBm)</option>
+                      <option value="-65">Near / Walk-up (~1.5 meters, -65 dBm)</option>
+                      <option value="-78" selected>Path 2 Proximity (~3 meters, -78 dBm)</option>
+                      <option value="-85">Far / Vehicle Entry (~5 meters, -85 dBm)</option>
+                      <option value="custom">Custom dBm Slider</option>
+                    </select>
+                  </div>
+
+                  <div class="input-group">
+                    <label style="display:flex; justify-content:space-between;">
+                      <span>Fine RSSI Threshold: <strong id="bleSliderVal">-78 dBm</strong></span>
+                      <span style="color:var(--text-muted); font-size:0.75rem;">Stronger (-40) ← → Weaker (-90)</span>
+                    </label>
+                    <input type="range" id="bleRssiSlider" min="-90" max="-40" value="-78" step="1" oninput="onBleSliderInput(this.value)" style="width:100%; accent-color:var(--accent-cyan);" />
+                  </div>
+
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+                    <label style="font-size:0.85rem; color:#fff; display:flex; align-items:center; gap:8px; cursor:pointer;">
+                      <input type="checkbox" id="bleAutoUnlockCheck" checked /> Auto-Unlock Door Strike on Entry
+                    </label>
+                    <button class="btn btn-primary btn-sm" onclick="saveBleRangeConfig()">Save Range Config</button>
+                  </div>
+                </div>
+
+                <!-- Live BLE Proximity Radar & Test Simulator -->
+                <div class="stat-card" style="display:flex; flex-direction:column; gap:10px;">
+                  <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label">GATT Live Radar & Simulator</span>
+                    <span class="badge badge-plate" style="font-size:0.65rem;">GATT: 9F82A001 | Status: 9F82A004</span>
+                  </div>
+
+                  <!-- Active Connections / Sessions -->
+                  <div id="bleActiveSessionsList" style="min-height:55px; max-height:85px; overflow-y:auto; background:rgba(0,0,0,0.25); border-radius:6px; padding:8px;">
+                    <p style="color:var(--text-muted); font-size:0.8rem; margin:0;">Scanning for mobile app connections...</p>
+                  </div>
+
+                  <div style="display:flex; gap:8px; align-items:center; margin-top:auto;">
+                    <button class="btn btn-secondary btn-sm" style="flex:1;" onclick="simulateMobileUnlock()">
+                      ⚡ Simulate Mobile Unlock Test
+                    </button>
+                  </div>
+                  <p id="bleSimMessage" class="feedback-msg" style="margin:0; font-size:0.78rem;"></p>
+                </div>
+
+              </div>
+
+              <!-- BLE Device Add Section -->
+              <div style="margin-top:20px; border-top:1px solid rgba(255,255,255,0.06); padding-top:16px;">
+                <h5 style="color:#fff; font-size:0.95rem; margin-bottom:12px; display:flex; align-items:center; gap:8px;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+                  Add Authorized BLE Device / Mobile Key
+                </h5>
+
+                <div class="grid-3col" style="align-items:end;">
+                  <div class="input-group">
+                    <label>Holder / Device Name</label>
+                    <input type="text" id="bleHolderName" placeholder="e.g. John Doe - iPhone 15" />
+                  </div>
+
+                  <div class="input-group">
+                    <label>Role</label>
+                    <select id="bleDeviceRole">
+                      <option value="admin">Administrator (24/7 Full Access)</option>
+                      <option value="staff" selected>Staff / Employee</option>
+                      <option value="resident">Resident / Member</option>
+                      <option value="guest">Guest / Visitor</option>
+                    </select>
+                  </div>
+
+                  <div class="input-group">
+                    <label>Client MAC Address (Optional)</label>
+                    <input type="text" id="bleDeviceMac" placeholder="e.g. AA:BB:CC:11:22:33" />
+                  </div>
+                </div>
+
+                <div style="display:flex; gap:10px; align-items:flex-end; margin-top:10px;">
+                  <div class="input-group" style="flex:1;">
+                    <label style="display:flex; justify-content:space-between;">
+                      <span>Shared Credential Secret / Key (HMAC-SHA256)</span>
+                      <a href="javascript:void(0)" onclick="generateRandomBleSecret()" style="color:var(--accent-cyan); font-size:0.75rem; text-decoration:none;">⚡ Generate Random Key</a>
+                    </label>
+                    <input type="text" id="bleSecretKey" placeholder="Enter 64-char hex secret or click Generate" class="font-mono" style="font-size:0.8rem;" />
+                  </div>
+
+                  <button class="btn btn-primary" onclick="addBleDevice()" style="height:38px; white-space:nowrap;">
+                    + Add BLE Device
+                  </button>
+                </div>
+                <p id="bleAddMessage" class="feedback-msg"></p>
+              </div>
+
+              <!-- Authorized Whitelist Table -->
+              <div style="margin-top:20px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                  <h5 style="color:#fff; font-size:0.9rem; margin:0;">Authorized BLE Devices &amp; Mobile Whitelist</h5>
+                  <button class="btn btn-secondary btn-sm" onclick="loadBleCredentials()">Reload Whitelist</button>
+                </div>
+
+                <div class="table-container" style="max-height:220px; overflow-y:auto;">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Holder / Device</th>
+                        <th>Role</th>
+                        <th>Credential Secret Key</th>
+                        <th>Status</th>
+                        <th style="text-align:right;">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody id="bleWhitelistTableBody">
+                      <tr><td colspan="5" style="text-align:center; padding:12px; color:var(--text-muted);">Loading authorized devices...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+            </div>
+
           </div>
         </section>
 
@@ -1118,6 +1275,61 @@
                 <p id="btMessage" class="feedback-msg"></p>
               </div>
 
+            </div>
+
+            <!-- ── FOTA & Firmware Update Management ── -->
+            <div class="glass-panel" style="margin-top:16px;">
+              <div class="panel-header">
+                <h4 class="panel-title">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  Firmware Over-The-Air (FOTA) & System Updates
+                </h4>
+                <div style="display:flex; gap:8px;">
+                  <button class="btn btn-secondary btn-sm" onclick="checkFotaCloudUpdate()">Check Cloud Release</button>
+                  <button class="btn btn-danger btn-sm" onclick="triggerFotaRollback()">Rollback Snapshot</button>
+                </div>
+              </div>
+
+              <div class="grid-2col" style="margin-top:8px;">
+                <!-- Firmware Status Card -->
+                <div class="stat-card">
+                  <span class="stat-label">Active Firmware Version</span>
+                  <div style="display:flex; align-items:center; justify-content:space-between; margin-top:4px;">
+                    <span class="stat-value font-mono" id="fotaCurrentVer" style="color:var(--accent-cyan); font-size:1.4rem;">v2.4.0</span>
+                    <span id="fotaStatusPill" class="status-pill status-pill-online">IDLE</span>
+                  </div>
+                  <span class="stat-sub" id="fotaDeviceInfo">Device: - • Storage: Ready</span>
+                </div>
+
+                <!-- Direct Zero-Password File Upload -->
+                <div style="display:flex; flex-direction:column; gap:10px;">
+                  <div class="input-group">
+                    <label>Upload Firmware Release (.zip / .tar.gz)</label>
+                    <input type="file" id="fotaFileInput" accept=".zip,.tar.gz,.tar" style="padding:6px; font-size:0.85rem; background:rgba(255,255,255,0.05); border:1px dashed var(--border-subtle); border-radius:6px;" />
+                  </div>
+                  <div style="display:flex; gap:10px; align-items:center;">
+                    <label style="font-size:0.8rem; color:var(--text-muted); display:flex; align-items:center; gap:6px; cursor:pointer;">
+                      <input type="checkbox" id="fotaRebootCheckbox" checked /> Auto-reboot after update
+                    </label>
+                    <button class="btn btn-primary btn-sm" id="btnUploadFota" onclick="uploadFotaPackage()" style="margin-left:auto;">
+                      🚀 Flash Firmware
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Live Progress & Telemetry Log -->
+              <div id="fotaProgressContainer" style="display:none; margin-top:14px;">
+                <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:4px;">
+                  <span id="fotaProgressStep" style="color:var(--accent-cyan); font-weight:600;">Uploading firmware package...</span>
+                  <span id="fotaProgressPercent" class="font-mono">0%</span>
+                </div>
+                <div style="width:100%; background:rgba(255,255,255,0.1); border-radius:4px; height:8px; overflow:hidden;">
+                  <div id="fotaProgressBar" style="width:0%; height:100%; background:linear-gradient(90deg, #38bdf8, #34d399); transition:width 0.3s ease;"></div>
+                </div>
+              </div>
+
+              <p id="fotaMessage" class="feedback-msg" style="margin-top:10px;"></p>
             </div>
 
           </div>

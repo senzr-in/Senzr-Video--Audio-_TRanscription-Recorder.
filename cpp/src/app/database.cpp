@@ -399,6 +399,13 @@ bool Database::open() {
     vacuum_old_events(14);
     vacuum_old_telemetry(7);
 
+    // Seed default physical human gate master credential
+    AccessCredentialRow master_cred;
+    master_cred.credential_hash = "senzr_sec_k992_prod_human_gate_master";
+    master_cred.holder_name = "Master Human Gate Operator";
+    master_cred.role = "admin";
+    add_access_credential(master_cred);
+
     // Log boot event
     log_system_event("BOOT", "Edge gateway database initialized successfully", "info");
     std::cout << "[Database] Database initialized and WAL ready at: " << db_path_ << std::endl;

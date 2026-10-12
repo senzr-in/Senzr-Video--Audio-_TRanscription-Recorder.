@@ -155,6 +155,8 @@ edge-gateway-framework/
 
 > 📖 **Complete Linux Guide:** For full step-by-step installation, dependency compilation, camera/NPU configuration, systemd services, and production deployment, refer to the [**Linux Setup & Guide Steps**](file:///f:/PI5MAX/LINUX_SETUP_GUIDE.md).
 >
+> 💻 **WSL2 Windows Dev Guide:** For setting up Windows Subsystem for Linux (WSL2), local C++20 compilation, CTest execution, and web dashboard testing on Windows, refer to the [**WSL2 Setup & Usage Guide**](file:///f:/PI5MAX/WSL_SETUP_GUIDE.md).
+>
 > 🚀 **Quick SSH Build Guide:** For quick on-board SSH compile and run instructions, see [**BUILD_INSTRUCTIONS.md**](file:///f:/PI5MAX/BUILD_INSTRUCTIONS.md).
 
 ### High-Level Setup Summary:

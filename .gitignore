@@ -48,6 +48,7 @@ cpp/build/
 cpp/build_phase1/
 cpp/build_shared/
 cpp/installed_sdk/
+build_linux/
 build/
 deploy/work/
 deploy/output/

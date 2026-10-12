@@ -122,6 +122,12 @@ set(APP_SOURCES
     src/sdk/fota.cpp
 )
 
+# GCC 11 workaround for large httplib lambda templates
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+    set_source_files_properties(src/app/api_server.cpp PROPERTIES COMPILE_OPTIONS "-O1")
+endif()
+
+
 set(PIPELINE_SOURCES
     src/session_pipeline/session.cpp
     src/session_pipeline/video_capture.cpp

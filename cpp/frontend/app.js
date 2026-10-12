@@ -72,6 +72,8 @@ function switchTab(tabId) {
     updateLoadTestStatus();
   } else if (tabId === "gpio") {
     loadGpioPins();
+    loadBleStatusAndConfig();
+    loadBleCredentials();
   }
 }
 
@@ -1707,7 +1709,282 @@ window.addEventListener("DOMContentLoaded", () => {
       loadGallery();
     } else if (activeTab === "network") {
       loadFotaStatus();
+    } else if (activeTab === "gpio") {
+      loadBleStatusAndConfig();
     }
   }, 3000);
+
+  // Initialize BLE status and credentials
+  loadBleStatusAndConfig();
+  loadBleCredentials();
 });
+
+// ── BLE Mobile Access, Proximity Range & Device Whitelist ──────────────────
+
+function estimateBleDistanceMeters(rssi) {
+  // Path loss model: d = 10 ^ ((-59 - rssi) / (10 * 2))
+  const d = Math.pow(10, (-59 - rssi) / 20.0);
+  return Math.max(0.1, Math.round(d * 10) / 10);
+}
+
+function onBleSliderInput(val) {
+  const num = parseInt(val, 10);
+  const sliderEl = document.getElementById("bleSliderVal");
+  const rangeValEl = document.getElementById("bleRangeValue");
+  const presetEl = document.getElementById("bleRangePreset");
+  const dist = estimateBleDistanceMeters(num);
+
+  if (sliderEl) sliderEl.textContent = `${num} dBm`;
+  if (rangeValEl) rangeValEl.textContent = `${num} dBm (~${dist}m)`;
+
+  if (presetEl) {
+    const match = ["-55", "-65", "-72", "-82"].includes(String(num));
+    presetEl.value = match ? String(num) : "custom";
+  }
+}
+
+function onBlePresetChange() {
+  const presetEl = document.getElementById("bleRangePreset");
+  const slider = document.getElementById("bleRssiSlider");
+  if (!presetEl || !slider) return;
+
+  if (presetEl.value !== "custom") {
+    slider.value = presetEl.value;
+    onBleSliderInput(presetEl.value);
+  }
+}
+
+async function loadBleStatusAndConfig() {
+  try {
+    const [cfgRes, stRes] = await Promise.all([
+      fetch("/api/ble/config", { cache: "no-store" }),
+      fetch("/api/ble/status", { cache: "no-store" })
+    ]);
+
+    if (cfgRes.ok) {
+      const cfg = await cfgRes.json();
+      const slider = document.getElementById("bleRssiSlider");
+      const autoUnlock = document.getElementById("bleAutoUnlockCheck");
+
+      if (slider && cfg.rssi_threshold !== undefined) {
+        slider.value = cfg.rssi_threshold;
+        onBleSliderInput(cfg.rssi_threshold);
+      }
+      if (autoUnlock && cfg.auto_unlock !== undefined) {
+        autoUnlock.checked = cfg.auto_unlock;
+      }
+    }
+
+    if (stRes.ok) {
+      const st = await stRes.json();
+      const pill = document.getElementById("bleServicePill");
+      if (pill) {
+        pill.textContent = st.running ? "GATT Active" : "GATT Inactive";
+        pill.className = st.running ? "status-pill status-pill-online" : "status-pill status-pill-offline";
+      }
+
+      const sessionsContainer = document.getElementById("bleActiveSessionsList");
+      if (sessionsContainer) {
+        if (st.active_clients && st.active_clients.length > 0) {
+          sessionsContainer.innerHTML = st.active_clients.map(c => {
+            const inZone = c.in_actuation_zone;
+            const dist = c.estimated_distance_m !== undefined ? c.estimated_distance_m : estimateBleDistanceMeters(c.median_rssi);
+            return `
+              <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid rgba(255,255,255,0.05); font-size:0.8rem;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span class="font-mono" style="color:#fff; font-weight:600;">${escapeHtml(c.mac)}</span>
+                  <span style="font-size:0.75rem; color:var(--text-muted);">${c.median_rssi} dBm (~${dist}m)</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <span class="badge ${inZone ? 'badge-plate' : ''}" style="font-size:0.65rem; background:${inZone ? 'rgba(52,211,153,0.2)' : 'rgba(239,68,68,0.2)'}; color:${inZone ? '#34d399' : '#f87171'};">
+                    ${inZone ? 'IN ACTUATION ZONE' : 'OUT OF RANGE'}
+                  </span>
+                  <button class="btn btn-secondary btn-sm" style="padding:2px 6px; font-size:0.7rem;" onclick="prefillBleDevice('${escapeHtml(c.mac)}')">+ Whitelist</button>
+                </div>
+              </div>
+            `;
+          }).join("");
+        } else {
+          sessionsContainer.innerHTML = "<p style='color:var(--text-muted); font-size:0.8rem; margin:0;'>No BLE mobile devices connected currently.</p>";
+        }
+      }
+    }
+  } catch (err) {}
+}
+
+async function saveBleRangeConfig() {
+  const slider = document.getElementById("bleRssiSlider");
+  const autoUnlock = document.getElementById("bleAutoUnlockCheck");
+  const threshold = slider ? parseInt(slider.value, 10) : -70;
+  const enableAuto = autoUnlock ? autoUnlock.checked : true;
+
+  try {
+    const res = await fetch("/api/ble/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        rssi_threshold: threshold,
+        auto_unlock: enableAuto
+      })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showMsg("bleSimMessage", `Range saved: Threshold = ${threshold} dBm, Auto-Unlock = ${enableAuto ? 'ON' : 'OFF'}`);
+    } else {
+      showMsg("bleSimMessage", "Failed to save range config", true);
+    }
+  } catch (err) {
+    showMsg("bleSimMessage", "Error communicating with BLE API", true);
+  }
+}
+
+function generateRandomBleSecret() {
+  const arr = new Uint8Array(32);
+  window.crypto.getRandomValues(arr);
+  const hex = Array.from(arr).map(b => b.toString(16).padStart(2, "0")).join("");
+  const input = document.getElementById("bleSecretKey");
+  if (input) input.value = hex;
+}
+
+function prefillBleDevice(mac) {
+  const macInput = document.getElementById("bleDeviceMac");
+  if (macInput) macInput.value = mac;
+  if (!document.getElementById("bleSecretKey").value) {
+    generateRandomBleSecret();
+  }
+  showMsg("bleAddMessage", `Selected MAC ${mac}. Secret key generated!`);
+}
+
+async function addBleDevice() {
+  const holder = document.getElementById("bleHolderName").value.trim();
+  const role = document.getElementById("bleDeviceRole").value;
+  const mac = document.getElementById("bleDeviceMac").value.trim();
+  let secret = document.getElementById("bleSecretKey").value.trim();
+
+  if (!holder) {
+    showMsg("bleAddMessage", "Holder or Device Name is required", true);
+    return;
+  }
+
+  if (!secret) {
+    generateRandomBleSecret();
+    secret = document.getElementById("bleSecretKey").value.trim();
+  }
+
+  try {
+    const res = await fetch("/api/credentials", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        holder_name: holder,
+        role: role,
+        credential_hash: secret,
+        plate_number: mac || ""
+      })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showMsg("bleAddMessage", `Device '${holder}' added to whitelist successfully!`);
+      document.getElementById("bleHolderName").value = "";
+      document.getElementById("bleDeviceMac").value = "";
+      document.getElementById("bleSecretKey").value = "";
+      loadBleCredentials();
+    } else {
+      showMsg("bleAddMessage", `Error: ${data.message || 'Failed to add credential'}`, true);
+    }
+  } catch (err) {
+    showMsg("bleAddMessage", "Error saving credential", true);
+  }
+}
+
+async function loadBleCredentials() {
+  const tbody = document.getElementById("bleWhitelistTableBody");
+  if (!tbody) return;
+
+  try {
+    const res = await fetch("/api/credentials?limit=50", { cache: "no-store" });
+    if (!res.ok) return;
+    const creds = await res.json();
+
+    if (!Array.isArray(creds) || creds.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:12px; color:var(--text-muted);">No authorized devices registered yet. Add one above.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = creds.map(c => {
+      const isRevoked = !!c.is_revoked;
+      const hashShort = c.credential_hash ? `${c.credential_hash.slice(0, 8)}...${c.credential_hash.slice(-6)}` : "-";
+      return `
+        <tr>
+          <td>
+            <div style="font-weight:600; color:#fff;">${escapeHtml(c.holder_name || 'Unnamed')}</div>
+            <div class="font-mono" style="font-size:0.75rem; color:var(--text-muted);">${escapeHtml(c.plate_number || 'Any MAC')}</div>
+          </td>
+          <td>
+            <span class="badge" style="text-transform:uppercase; font-size:0.7rem; background:rgba(6,182,212,0.15); color:var(--accent-cyan); border:1px solid rgba(6,182,212,0.3);">
+              ${escapeHtml(c.role || 'user')}
+            </span>
+          </td>
+          <td>
+            <span class="font-mono" style="font-size:0.8rem; color:var(--text-muted); cursor:pointer;" title="Click to copy full key" onclick="navigator.clipboard.writeText('${escapeHtml(c.credential_hash)}'); alert('Secret key copied to clipboard!');">
+              ${hashShort} 📋
+            </span>
+          </td>
+          <td>
+            <span class="status-pill ${isRevoked ? 'status-pill-offline' : 'status-pill-online'}">
+              ${isRevoked ? 'Revoked' : 'Active'}
+            </span>
+          </td>
+          <td style="text-align:right;">
+            ${!isRevoked ? `
+              <button class="btn btn-danger btn-sm" onclick="revokeBleCredential('${escapeHtml(c.credential_hash)}')">Revoke</button>
+            ` : '<span style="color:var(--text-muted); font-size:0.75rem;">Revoked</span>'}
+          </td>
+        </tr>
+      `;
+    }).join("");
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:12px; color:var(--accent-rose);">Failed to load credentials list.</td></tr>`;
+  }
+}
+
+async function revokeBleCredential(hash) {
+  if (!confirm("Are you sure you want to revoke this mobile key?")) return;
+  try {
+    const res = await fetch("/api/credentials/revoke", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ credential_hash: hash })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showMsg("bleAddMessage", "Device key revoked.");
+      loadBleCredentials();
+    } else {
+      showMsg("bleAddMessage", "Failed to revoke key", true);
+    }
+  } catch (err) {
+    showMsg("bleAddMessage", "Error revoking key", true);
+  }
+}
+
+async function simulateMobileUnlock() {
+  showMsg("bleSimMessage", "Running simulated cryptographic BLE handshake...");
+  try {
+    const res = await fetch("/api/ble/simulate-test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mac: "mobile_test_sim", rssi: -62 })
+    });
+    const data = await res.json();
+    if (data.authorized) {
+      showMsg("bleSimMessage", `✓ ${data.message} (RSSI: ${data.rssi} dBm, Nonce: ${data.nonce.slice(0,8)}...)`);
+      loadBleStatusAndConfig();
+    } else {
+      showMsg("bleSimMessage", `✕ ${data.message}`, true);
+    }
+  } catch (err) {
+    showMsg("bleSimMessage", "Failed to run simulation test", true);
+  }
+}
 

@@ -36,17 +36,26 @@ Result<void> Manager::stop_advertising() {
 
 BleStatus Manager::get_status() const {
     BleStatus st;
-    st.is_advertising = pimpl_->backend.is_running();
-    st.is_connected   = pimpl_->backend.is_running();
+    bool active = pimpl_->backend.is_running();
+#if defined(__linux__)
+    if (!active) {
+        int rc = std::system("pgrep -f 'senzr_ble_peripheral.py' >/dev/null 2>&1 || pgrep -f 'edge-gateway-backend' >/dev/null 2>&1");
+        if (rc == 0) {
+            active = true;
+        }
+    }
+#endif
+    st.is_advertising = active;
+    st.is_connected   = active;
     return st;
 }
 
 bool Manager::is_advertising() const {
-    return pimpl_->backend.is_running();
+    return get_status().is_advertising;
 }
 
 bool Manager::is_connected() const {
-    return pimpl_->backend.is_running();
+    return get_status().is_connected;
 }
 
 } // namespace senzr::ble

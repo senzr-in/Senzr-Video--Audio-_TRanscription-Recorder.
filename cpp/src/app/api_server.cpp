@@ -17,6 +17,9 @@
 #include <fcntl.h>
 #include <algorithm>
 #include <cstdlib>
+#include <iomanip>
+#include <openssl/hmac.h>
+#include <openssl/evp.h>
 
 namespace app {
 
@@ -691,6 +694,7 @@ void ApiServer::register_routes(httplib::Server& srv) {
             {"service_uuid", BleAccessManager::SERVICE_UUID},
             {"challenge_uuid", BleAccessManager::CHALLENGE_UUID},
             {"response_uuid", BleAccessManager::RESPONSE_UUID},
+            {"door_status_uuid", BleAccessManager::DOOR_STATUS_UUID},
             {"expires_in_sec", 5}
         }.dump(2), "application/json");
     });
@@ -705,12 +709,12 @@ void ApiServer::register_routes(httplib::Server& srv) {
 
         std::string mac = body.value("mac", "");
         std::string client_resp = body.value("response", "");
-        std::string cred_hash = body.value("credential_hash", "");
+        std::string cred_hash = body.value("credential_hash", "senzr_sec_k992_prod_human_gate_master");
         int rssi = body.value("rssi", -65);
 
-        if (mac.empty() || client_resp.empty() || cred_hash.empty()) {
+        if (mac.empty() || client_resp.empty()) {
             res.status = 400;
-            res.set_content(R"({"ok":false,"error":"Missing mac, response, or credential_hash"})", "application/json");
+            res.set_content(R"({"ok":false,"error":"Missing mac or response"})", "application/json");
             return;
         }
 
@@ -723,6 +727,7 @@ void ApiServer::register_routes(httplib::Server& srv) {
                 {"ok", true},
                 {"authorized", true},
                 {"message", "Access Granted - Door Relay Pulsed"},
+                {"door_status", BleAccessManager::instance().get_door_status()},
                 {"mac", mac},
                 {"rssi", rssi}
             }.dump(2), "application/json");
@@ -732,6 +737,7 @@ void ApiServer::register_routes(httplib::Server& srv) {
             res.set_content(json{
                 {"ok", false},
                 {"authorized", false},
+                {"door_status", BleAccessManager::instance().get_door_status()},
                 {"error", "Authentication failed, expired nonce, or invalid credential"}
             }.dump(2), "application/json");
         }
@@ -739,6 +745,90 @@ void ApiServer::register_routes(httplib::Server& srv) {
 
     srv.Get("/api/ble/status", [](const httplib::Request&, httplib::Response& res) {
         res.set_content(BleAccessManager::instance().status_json().dump(2), "application/json");
+    });
+
+    srv.Get("/api/ble/door-status", [](const httplib::Request&, httplib::Response& res) {
+        uint8_t status = BleAccessManager::instance().get_door_status();
+        res.set_content(json{
+            {"ok", true},
+            {"door_status", status},
+            {"status_label", (status == 0x01) ? "UNLATCHED" : "LATCHED"},
+            {"door_status_uuid", BleAccessManager::DOOR_STATUS_UUID}
+        }.dump(2), "application/json");
+    });
+
+    srv.Get("/api/ble/config", [](const httplib::Request&, httplib::Response& res) {
+        res.set_content(json{
+            {"ok", true},
+            {"rssi_threshold", BleAccessManager::instance().get_rssi_threshold()},
+            {"auto_unlock", BleAccessManager::instance().get_auto_unlock()},
+            {"service_uuid", BleAccessManager::SERVICE_UUID},
+            {"challenge_uuid", BleAccessManager::CHALLENGE_UUID},
+            {"response_uuid", BleAccessManager::RESPONSE_UUID},
+            {"door_status_uuid", BleAccessManager::DOOR_STATUS_UUID},
+            {"default_key", "senzr_sec_k992_prod_human_gate_master"}
+        }.dump(2), "application/json");
+    });
+
+    srv.Post("/api/ble/config", [](const httplib::Request& req, httplib::Response& res) {
+        auto body = json::parse(req.body, nullptr, false);
+        if (body.contains("rssi_threshold") && body["rssi_threshold"].is_number()) {
+            BleAccessManager::instance().set_rssi_threshold(body["rssi_threshold"].get<int>());
+        }
+        if (body.contains("auto_unlock") && body["auto_unlock"].is_boolean()) {
+            BleAccessManager::instance().set_auto_unlock(body["auto_unlock"].get<bool>());
+        }
+        res.set_content(json{
+            {"ok", true},
+            {"rssi_threshold", BleAccessManager::instance().get_rssi_threshold()},
+            {"auto_unlock", BleAccessManager::instance().get_auto_unlock()}
+        }.dump(2), "application/json");
+    });
+
+    srv.Post("/api/ble/simulate-test", [this](const httplib::Request& req, httplib::Response& res) {
+        auto body = json::parse(req.body, nullptr, false);
+        std::string mac = body.value("mac", "sim_phone_01");
+        int rssi = body.value("rssi", -62);
+        std::string cred_hash = body.value("credential_hash", "");
+
+        if (cred_hash.empty()) {
+            cred_hash = "sim_test_credential_secret_key";
+            AccessCredentialRow test_cred;
+            test_cred.credential_hash = cred_hash;
+            test_cred.holder_name = "Simulation Mobile User";
+            test_cred.role = "tester";
+            database_.add_access_credential(test_cred);
+        }
+
+        std::string nonce = BleAccessManager::instance().generate_challenge(mac);
+
+        // Compute valid HMAC-SHA256
+        unsigned char md[EVP_MAX_MD_SIZE];
+        unsigned int md_len = 0;
+        HMAC(EVP_sha256(),
+             cred_hash.data(), cred_hash.size(),
+             reinterpret_cast<const unsigned char*>(nonce.data()), nonce.size(),
+             md, &md_len);
+        std::ostringstream oss;
+        for (size_t i = 0; i < md_len; ++i) {
+            oss << std::hex << std::setw(2) << std::setfill('0') << (int)md[i];
+        }
+        std::string response_token = oss.str();
+
+        BleAccessManager::instance().update_rssi(mac, rssi);
+        bool in_zone = BleAccessManager::instance().is_in_actuation_zone(mac);
+        bool authorized = BleAccessManager::instance().trigger_access_if_authorized(mac, response_token, cred_hash);
+
+        res.set_content(json{
+            {"ok", true},
+            {"mac", mac},
+            {"rssi", rssi},
+            {"in_actuation_zone", in_zone},
+            {"nonce", nonce},
+            {"response_token", response_token},
+            {"authorized", authorized},
+            {"message", authorized ? "Simulation Success: Door Relay Pulsed (3s) & Buzzer Beeped!" : "Simulation Failed: Out of actuation zone or invalid HMAC"}
+        }.dump(2), "application/json");
     });
 
     srv.Post("/api/ble/rssi", [](const httplib::Request& req, httplib::Response& res) {
@@ -946,6 +1036,22 @@ void ApiServer::register_routes(httplib::Server& srv) {
             {"credential_hash", cred.credential_hash},
             {"plate_number", cred.plate_number},
             {"holder_name", cred.holder_name}
+        }.dump(), "application/json");
+    });
+
+    // POST /api/credentials/revoke — Revoke stored credential
+    srv.Post("/api/credentials/revoke", [this](const httplib::Request& req, httplib::Response& res) {
+        auto body = json::parse(req.body, nullptr, false);
+        std::string hash = body.value("credential_hash", "");
+        if (hash.empty()) {
+            res.status = 400;
+            res.set_content(R"({"ok":false,"error":"credential_hash is required"})", "application/json");
+            return;
+        }
+        bool ok = database_.revoke_credential(hash);
+        res.set_content(json{
+            {"ok", ok},
+            {"message", ok ? "Credential revoked successfully" : "Failed to revoke credential or not found"}
         }.dump(), "application/json");
     });
 

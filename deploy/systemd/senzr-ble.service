@@ -1,0 +1,16 @@
+[Unit]
+Description=SENZR Edge Gateway BlueZ GATT & BLE Advertising Service
+After=bluetooth.target edge-gateway.service
+Wants=bluetooth.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/orangepi/edge-gateway
+ExecStart=/usr/bin/python3 /home/orangepi/edge-gateway/scripts/senzr_ble_peripheral.py
+Restart=always
+RestartSec=2
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

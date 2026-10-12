@@ -227,9 +227,10 @@ int main(int argc, char* argv[]) {
                       << "  GATT Service UUID: 9F82A001-7B34-4C12-8921-5092A1B2C3D4\n"
                       << "  Challenge UUID   : 9F82A002-7B34-4C12-8921-5092A1B2C3D4\n"
                       << "  Response UUID    : 9F82A003-7B34-4C12-8921-5092A1B2C3D4\n"
+                      << "  Door Status UUID : 9F82A004-7B34-4C12-8921-5092A1B2C3D4\n"
                       << "  Advertising      : " << (st.is_advertising ? "ACTIVE (Broadcasting)" : "INACTIVE") << "\n"
                       << "  Connected Clients: " << (st.is_connected ? "CONNECTED" : "NO ACTIVE CLIENT") << "\n"
-                      << "  Actuation Range  : Proximity Zone (>= -70 dBm)\n"
+                      << "  Actuation Range  : Proximity Zone (>= -78 dBm, ~3m range)\n"
                       << "===========================================\n";
             return 0;
         }
@@ -243,6 +244,9 @@ int main(int argc, char* argv[]) {
 
         if (cmd == "stop") {
             auto res = ble.stop_advertising();
+            std::system("pkill -f 'senzr_ble_peripheral.py' 2>/dev/null || true");
+            std::system("hcitool -i hci0 cmd 0x08 0x0039 00 00 2>/dev/null || true");
+            std::system("hciconfig hci0 noleadv 2>/dev/null || true");
             std::cout << (res ? "[senzr-ctl] BLE Access advertising stopped\n"
                               : "[senzr-ctl] Failed to stop BLE: " + res.error().message() + "\n");
             return res ? 0 : 1;
